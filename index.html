@@ -1,0 +1,1852 @@
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Noto Sans SC", "SF Pro Text", -apple-system, sans-serif; background: #fafaf8; color: #1a1a18; padding: 40px 20px; }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  .label { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: #999; margin-bottom: 8px; }
+  h1 { font-size: 28px; font-weight: 600; line-height: 1.3; }
+  .desc { font-size: 14px; color: #777; margin-top: 8px; line-height: 1.6; }
+  .drop { border: 2px dashed #ddd; border-radius: 12px; padding: 48px 32px; text-align: center; background: #fff; cursor: pointer; margin: 32px 0; transition: all 0.2s; }
+  .drop.over { border-color: #e8a87c; background: #fef9f4; }
+  .drop-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+  .drop-text { font-size: 15px; color: #555; margin-bottom: 8px; }
+  .drop-hint { font-size: 12px; color: #aaa; }
+  .warn { background: #fffde7; border: 1px solid #fff9c4; border-radius: 8px; padding: 16px 20px; font-size: 13px; color: #f57f17; margin-bottom: 24px; line-height: 1.7; }
+  .err { background: #fff0f0; border: 1px solid #ffcdd2; border-radius: 8px; padding: 16px 20px; font-size: 14px; color: #c62828; margin-bottom: 24px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .topbar-count { font-size: 15px; font-weight: 500; }
+  .btn-dark { background: #1a1a18; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .btn-dark:hover { opacity: 0.8; }
+  .info { background: #f0f7ff; border: 1px solid #d0e3f7; border-radius: 8px; padding: 16px 20px; font-size: 13px; color: #1565c0; margin-bottom: 24px; line-height: 1.7; }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+
+<div class="wrap">
+  <div class="label">班主任工具</div>
+  <h1>班级月考/期中/期末成绩数据分析生成器</h1>
+  <p class="desc">上传从校宝导出的原始成绩文件（.xls / .xlsx），自动统计全班月考/期中/期末卷面成绩与学期成绩。</p>
+
+  <div class="drop" id="dropZone">
+    <div class="drop-icon">↑</div>
+    <div class="drop-text" id="dropText">拖拽文件到这里，或点击选择</div>
+    <div class="drop-hint">支持 .xls / .xlsx</div>
+    <input type="file" id="fileInput" accept=".xls,.xlsx" style="display:none" />
+  </div>
+
+  <div id="errBox" style="display:none" class="err"></div>
+  <div id="warnBox" style="display:none" class="warn"></div>
+  <div id="results"></div>
+</div>
+
+<script>
+const RENAME = {
+  "英语听说4级":"听说","英语听说3级":"听说","英语听说2级":"听说","英语听说1级":"听说","英语听说":"听说","ESL 听说":"听说",
+  "英语读写4级":"读写","英语读写3级":"读写","英语读写2级":"读写","英语读写1级":"读写","英语读写":"读写","ESL 读写":"读写",
+  "法语":"小语种","西班牙语":"小语种","日语":"小语种",
+};
+const EXCLUDE = new Set(["选修","STEAM课程"]);
+
+// ===== GPA Calculation (mirrors transcript generator rules) =====
+const GPA_COURSE_MAP = {
+  "英语听说":"_ENG","英语读写":"_ENG","写作":"_ENG",
+  "英语听说4级":"_ENG","英语读写4级":"_ENG",
+  "英语听说3级":"_ENG","英语读写3级":"_ENG",
+  "英语听说2级":"_ENG","英语读写2级":"_ENG",
+  "英语听说1级":"_ENG","英语读写1级":"_ENG",
+  "ESL 听说":"_ENG","ESL 读写":"_ENG","文学":"_ENG",
+  "托福课程":"_ENG","文书写作":"_ENG","英美文学":"_ENG",
+  "语文一册":"_CHN","语文二册":"_CHN",
+  "数学":"Algebra II","物理":"Physics","化学":"Chemistry",
+  "生物一册":"Biology","生物二册":"Biology 9","计算机":"Computer Science",
+  "中国历史":"Chinese History","法语":"French","西班牙语":"Spanish","日语":"Japanese",
+  "美术":"Art","音乐":"Music","体育":"Physical Education","戏剧":"Drama",
+  "AP预备微积分":"AP Pre-calculus","AP微积分":"AP Calculus","AP统计":"AP Statistics",
+  "AP物理1":"AP Physics 1","AP物理2":"AP Physics 2","AP物理C":"AP Physics C",
+  "AP化学":"AP Chemistry","AP生物":"AP Biology",
+  "美国历史":"American History","世界历史":"World History",
+  "经济学":"Economics","AP计算机科学":"AP Computer Science",
+  "AP微观经济":"AP Microeconomics","AP宏观经济":"AP Macroeconomics","AP宏观经济学":"AP Macroeconomics",
+  "AP心理学":"AP Psychology","AP研讨会":"AP Seminar",
+  "知识论TOK":"Theory of Knowledge",
+  "AP 美术":"AP Art","AP美术":"AP Art","Capstone":"Capstone",
+};
+const GPA_REG = [
+  [97,100,4.33,0.5],[93,96,4,0.5],[90,92,3.67,0.5],
+  [87,89,3.33,0.5],[83,86,3,0.5],[80,82,2.67,0.5],
+  [77,79,2.33,0.5],[73,76,2,0.5],[70,72,1.67,0.5],
+  [67,69,1.33,0],[63,66,1,0],[60,62,0.67,0],[0,59,0,0]
+];
+const GPA_AP = [
+  [97,100,5,0.5],[93,96,4.67,0.5],[90,92,4.33,0.5],
+  [87,89,4,0.5],[83,86,3.67,0.5],[80,82,3.33,0.5],
+  [77,79,3,0.5],[73,76,2.67,0.5],[70,72,2.33,0.5],
+  [67,69,2,0],[63,66,1.67,0],[60,62,1.33,0],[0,59,0,0]
+];
+function gpaLookup(score, isAP) {
+  const r = Math.round(score), t = isAP ? GPA_AP : GPA_REG;
+  for (const [lo,hi,gpa,cr] of t) if (r>=lo&&r<=hi) return {gpa,cr};
+  return {gpa:0,cr:0};
+}
+function calcStudentGPA(student) {
+  const engScores = [], chnScores = [], standalone = [];
+  for (const key of Object.keys(student.courses)) {
+    const c = student.courses[key];
+    if (c.semScore === null || c.semScore === undefined || isNaN(c.semScore)) continue;
+    const cn = c.courseCN;
+    if (EXCLUDE.has(cn)) continue;
+    const en = GPA_COURSE_MAP[cn];
+    if (!en) { standalone.push({engName:cn, score:c.semScore}); continue; }
+    if (en === "_ENG") engScores.push(c.semScore);
+    else if (en === "_CHN") chnScores.push(c.semScore);
+    else standalone.push({engName:en, score:c.semScore});
+  }
+  const final = [];
+  if (engScores.length > 0) {
+    const avg = engScores.reduce((a,b)=>a+b,0)/engScores.length;
+    // Determine grade level for English name
+    final.push({engName:"English", score:Math.round(avg*10)/10});
+  }
+  if (chnScores.length > 0) {
+    const avg = chnScores.reduce((a,b)=>a+b,0)/chnScores.length;
+    final.push({engName:"Chinese", score:Math.round(avg*10)/10});
+  }
+  for (const c of standalone) final.push(c);
+  let tCr = 0, tW = 0;
+  for (const c of final) {
+    const isAP = c.engName.startsWith("AP ");
+    const {gpa,cr} = gpaLookup(c.score, isAP);
+    tCr += cr; tW += gpa * cr;
+  }
+  return tCr > 0 ? Math.round(tW / tCr * 100) / 100 : null;
+}
+
+// Short display names for subjects
+const DISPLAY_MAP = {
+  "AP微观经济":"AP微观经济","AP宏观经济":"AP宏观","AP宏观经济学":"AP宏观",
+  "AP计算机科学":"AP计算机","AP预备微积分":"AP Precal","AP微积分":"AP Calculus",
+  "AP统计":"AP Statistics","AP物理1":"AP物理","AP物理2":"AP物理2","AP物理C":"AP物理C",
+  "AP化学":"AP化学","AP生物":"AP生物","AP心理学":"AP心理","AP研讨会":"AP Seminar",
+  "AP 美术":"AP Art","AP美术":"AP Art",
+  "英语听说":"听说LS","英语读写":"读写RW","英语听说4级":"听说LS","英语读写4级":"读写RW",
+  "英语听说3级":"听说LS","英语读写3级":"读写RW","英语听说2级":"听说LS","英语读写2级":"读写RW",
+  "英语听说1级":"听说LS","英语读写1级":"读写RW",
+  "ESL 听说":"听说LS","ESL 读写":"读写RW",
+  "文学":"Literature","托福课程":"托福","文书写作":"文书写作","英美文学":"英美文学",
+  "数学":"普通数学","物理":"普通物理","化学":"普通化学","生物一册":"生物","生物二册":"生物",
+  "计算机":"计算机","美术":"美术","音乐":"音乐","体育":"体育",
+  "语文一册":"语文","语文二册":"语文","法语":"小语种","西班牙语":"小语种","日语":"小语种",
+  "美国历史":"美国历史","世界历史":"世界历史","中国历史":"中国历史",
+  "经济学":"普通经济","知识论TOK":"TOK","戏剧":"戏剧","Capstone":"Capstone",
+};
+
+// Column ordering
+const COL_ORDER = [
+  "听说","读写","文学","托福课程","文书写作","英美文学",
+  "AP预备微积分","AP微积分","AP统计","数学",
+  "AP物理1","AP物理2","AP物理C","物理",
+  "生物一册","生物二册","AP生物","AP化学","化学",
+  "语文一册","语文二册",
+  "AP微观经济","AP宏观经济","AP宏观经济学","经济学",
+  "AP计算机科学","计算机",
+  "美国历史","世界历史","中国历史","AP心理学","AP研讨会","知识论TOK",
+  "AP美术","AP 美术","美术","戏剧",
+  "小语种",
+  "音乐","体育","Capstone",
+];
+
+function parseFile(data) {
+  const wb = XLSX.read(data, {type:"array"});
+  const SKIP_C0 = new Set(["学号","学期","班级","任课老师","课程","课程满分","学分"]);
+  const students = [];
+
+  for (const sheetName of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {header:1, defval:""});
+
+    // Extract class info for title
+    let className = "", semester = "";
+    for (const row of rows) {
+      if (String(row[0]).trim() === "学期" && row[1]) semester = String(row[1]);
+      if (String(row[0]).trim() === "班级" && !className) {
+        for (let ci = 1; ci < row.length; ci++) {
+          const cell = String(row[ci] || "");
+          if (cell.match(/\d{1,2}年级\d+班/)) { className = cell; break; }
+        }
+      }
+    }
+
+    // Build course -> class name mapping from 班级 and 课程 rows
+    const courseToClass = {};
+    let classRow = null, courseRow = null;
+    let teacherRow = null;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const c0 = String(rows[i][0] || "").trim();
+      if (c0 === "班级") classRow = i;
+      if (c0 === "课程") courseRow = i;
+      if (c0 === "任课老师") teacherRow = i;
+    }
+    if (classRow !== null && courseRow !== null) {
+      for (let ci = 1; ci < rows[courseRow].length; ci++) {
+        const crs = String(rows[courseRow][ci] || "").trim();
+        const cls = String(rows[classRow][ci] || "").trim();
+        if (crs && cls) courseToClass[crs] = cls;
+      }
+    }
+    const courseToTeacher = {};
+    if (teacherRow !== null && courseRow !== null) {
+      for (let ci = 1; ci < rows[courseRow].length; ci++) {
+        const crs = String(rows[courseRow][ci] || "").trim();
+        const tch = String(rows[teacherRow][ci] || "").trim();
+        if (crs && tch) courseToTeacher[crs] = tch;
+      }
+    }
+
+    // Find all subject blocks (header rows with 学号 in col 0)
+    const blocks = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === "学号") {
+        // Find student data row
+        for (let j = i + 1; j < Math.min(i + 5, rows.length); j++) {
+          const c1 = String(rows[j][1] || "").trim();
+          const c3 = String(rows[j][3] || "").trim();
+          if (c1 && c1 !== "学生中文名" && c3 && c3 !== "课程") {
+            blocks.push({headerRow: i, dataRow: j, course: c3, 
+              name: c1, engName: String(rows[j][2] || "").trim(),
+              semScore: rows[j][5]});
+            break;
+          }
+        }
+      }
+    }
+
+    // For each block, extract 月考 score
+    const courseScores = {};
+    const hwProblems = [];
+    let studentName = "", studentEng = "";
+    
+    for (const block of blocks) {
+      if (!studentName) { 
+        studentName = block.name; 
+        studentEng = block.engName;
+      }
+      if (EXCLUDE.has(block.course)) continue;
+
+      const displayName = RENAME[block.course] || block.course;
+      let testScore = null;
+
+      // Find 测验 column in header row
+      for (let c = 0; c < rows[block.headerRow].length; c++) {
+        const v = String(rows[block.headerRow][c] || "");
+        if (!v.includes("测验")) continue;
+
+        // Found 测验 at col c
+        // Check if there are sub-items in row headerRow+1
+        const subRow = block.headerRow + 1;
+        const labelRow = block.headerRow + 2;
+        let found = false;
+        let bestScore = null; // track best: prefer numeric over Absent over null
+
+        // Scan sub-items: they come in pairs (得分, 总分) starting at c+1
+        for (let sc = c + 1; sc < Math.min(c + 30, rows[0].length); sc++) {
+          const subName = String(rows[subRow] && rows[subRow][sc] || "");
+          const label = String(rows[labelRow] && rows[labelRow][sc] || "");
+          
+          // Stop if we hit next section header (期中, 期末, or another section)
+          const headerCheck = String(rows[block.headerRow][sc] || "");
+          if (headerCheck && !headerCheck.includes("测验") && (headerCheck.includes("期中") || headerCheck.includes("期末") || headerCheck.includes("作业") || headerCheck.includes("课堂"))) break;
+
+          if (label === "得分" && subName) {
+            // Check if this sub-item is a 月考/Monthly Test
+            if (subName.includes("月考") || subName.toLowerCase().includes("monthly")) {
+              found = true;
+              const val = rows[block.dataRow][sc];
+              if (val !== "" && val != null) {
+                const parsed = isNaN(Number(val)) ? String(val) : Number(val);
+                // Prefer numeric score over string/Absent
+                if (typeof parsed === "number") {
+                  bestScore = parsed;
+                } else if (bestScore === null) {
+                  bestScore = parsed;
+                }
+              }
+              // Don't break — keep scanning for one with actual score
+            }
+          }
+        }
+
+        if (found) {
+          testScore = bestScore !== null ? bestScore : "Absent";
+        }
+
+        // If no 月考 sub-item found, use 测验 cell itself
+        if (!found) {
+          const val = rows[block.dataRow][c];
+          if (val !== "" && val != null && !isNaN(Number(val))) {
+            testScore = Number(val);
+          }
+        }
+        break;
+      }
+
+      // Extract 期中 (midterm) score
+      let midScore = null;
+      for (let c = 0; c < rows[block.headerRow].length; c++) {
+        const v = String(rows[block.headerRow][c] || "");
+        if (!v.includes("期中")) continue;
+        // Scan sub-items for actual 期中 exam score
+        const subRow = block.headerRow + 1;
+        const labelRow = block.headerRow + 2;
+        let found = false;
+        let bestScore = null;
+        for (let sc = c + 1; sc < Math.min(c + 20, rows[0].length); sc++) {
+          const subName = String(rows[subRow] && rows[subRow][sc] || "");
+          const label = String(rows[labelRow] && rows[labelRow][sc] || "");
+          const headerCheck = String(rows[block.headerRow][sc] || "");
+          if (headerCheck && !headerCheck.includes("期中") && (headerCheck.includes("期末") || headerCheck.includes("测验") || headerCheck.includes("作业") || headerCheck.includes("课堂"))) break;
+          if (label === "得分" && subName && (subName.includes("期中") || subName.toLowerCase().includes("midterm"))) {
+            found = true;
+            const val = rows[block.dataRow][sc];
+            if (val !== "" && val != null) {
+              const parsed = isNaN(Number(val)) ? String(val) : Number(val);
+              if (typeof parsed === "number") { bestScore = parsed; }
+              else if (bestScore === null) { bestScore = parsed; }
+            }
+          }
+        }
+        if (found) {
+          midScore = bestScore !== null ? bestScore : "Absent";
+        } else {
+          // Fallback: use the main header cell value
+          const val = rows[block.dataRow][c];
+          if (val !== "" && val != null) {
+            midScore = isNaN(Number(val)) ? String(val) : Number(val);
+          } else {
+            midScore = "Absent";
+          }
+        }
+        break;
+      }
+
+      // Extract 期末 (final) score
+      let finalScore = null;
+      for (let c = 0; c < rows[block.headerRow].length; c++) {
+        const v = String(rows[block.headerRow][c] || "");
+        if (!v.includes("期末")) continue;
+        const subRow = block.headerRow + 1;
+        const labelRow = block.headerRow + 2;
+        let found = false;
+        let bestScore = null;
+        for (let sc = c + 1; sc < Math.min(c + 20, rows[0].length); sc++) {
+          const subName = String(rows[subRow] && rows[subRow][sc] || "");
+          const label = String(rows[labelRow] && rows[labelRow][sc] || "");
+          const headerCheck = String(rows[block.headerRow][sc] || "");
+          if (headerCheck && !headerCheck.includes("期末") && (headerCheck.includes("期中") || headerCheck.includes("测验") || headerCheck.includes("作业") || headerCheck.includes("课堂"))) break;
+          if (label === "得分" && subName && (subName.includes("期末") || subName.toLowerCase().includes("final"))) {
+            found = true;
+            const val = rows[block.dataRow][sc];
+            if (val !== "" && val != null) {
+              const parsed = isNaN(Number(val)) ? String(val) : Number(val);
+              if (typeof parsed === "number") { bestScore = parsed; }
+              else if (bestScore === null) { bestScore = parsed; }
+            }
+          }
+        }
+        if (found) {
+          finalScore = bestScore !== null ? bestScore : "Absent";
+        } else {
+          const val = rows[block.dataRow][c];
+          if (val !== "" && val != null) {
+            finalScore = isNaN(Number(val)) ? String(val) : Number(val);
+          } else {
+            finalScore = "Absent";
+          }
+        }
+        break;
+      }
+
+      // Extract 问题作业 (homework score <= 50)
+      for (let c = 0; c < rows[block.headerRow].length; c++) {
+        const v = String(rows[block.headerRow][c] || "");
+        if (!v.includes("作业")) continue;
+        // Found 作业 section, scan sub-items
+        for (let sc = c + 1; sc < rows[block.headerRow].length; sc++) {
+          // Stop if we hit the next major section header
+          const nextHeader = String(rows[block.headerRow][sc] || "");
+          if (nextHeader && sc > c) break;
+          // Check if this is a 得分 column
+          const labelVal = String(rows[block.headerRow + 2]?.[sc] || "");
+          if (labelVal !== "得分") continue;
+          const hwName = String(rows[block.headerRow + 1]?.[sc] || "").trim();
+          const rawScore = rows[block.dataRow]?.[sc];
+          if (rawScore === "" || rawScore == null) continue; // skip blank
+          const numScore = Number(rawScore);
+          if (isNaN(numScore)) continue;
+          if (numScore <= 50) {
+            hwProblems.push({
+              course: block.course,
+              displayName: displayName,
+              teacher: courseToTeacher[block.course] || "",
+              hwName: hwName,
+              score: numScore,
+            });
+          }
+        }
+        break;
+      }
+
+      courseScores[displayName] = {
+        testScore: testScore,
+        midScore: midScore,
+        finalScore: finalScore,
+        semScore: (block.semScore !== "" && block.semScore != null) ? Number(block.semScore) : null,
+        courseCN: block.course,
+        courseClassName: courseToClass[block.course] || "",
+      };
+    }
+
+    if (studentName) {
+      const m = studentName.match(/（(.+?)）/);
+      students.push({
+        fullName: studentName,
+        cnName: m ? m[1] : studentName,
+        engName: studentEng,
+        courses: courseScores,
+        hwProblems,
+        className, semester,
+      });
+    }
+  }
+
+  return students;
+}
+
+function buildOutput(students) {
+  const allCols = new Set();
+  for (const s of students) {
+    for (const col of Object.keys(s.courses)) allCols.add(col);
+  }
+
+  const sorted = [...allCols].sort((a, b) => {
+    const ia = COL_ORDER.indexOf(a);
+    const ib = COL_ORDER.indexOf(b);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+
+  const EXTRA = new Set(["音乐","体育","美术"]);
+  const mainCols = sorted.filter(c => !EXTRA.has(c));
+  const extraCols = sorted.filter(c => EXTRA.has(c));
+
+  return { students, mainCols, extraCols };
+}
+
+function calcAvg(s, mainCols, scoreFn) {
+  let sum = 0, count = 0;
+  for (const col of mainCols) {
+    const c = s.courses[col];
+    const v = c ? scoreFn(c) : null;
+    if (v !== null && v !== undefined && typeof v === "number") { sum += v; count++; }
+  }
+  return count > 0 ? Math.round(sum / count * 10) / 10 : null;
+}
+
+const DEFAULT_W = 10;
+function setColWidths(ws, mainCols, extraCols, avgCol) {
+  const totalCols = avgCol + 1 + extraCols.length;
+  for (let c = 1; c <= totalCols; c++) {
+    ws.getColumn(c).width = DEFAULT_W;
+  }
+  ws.getColumn(1).width = 6.5;
+}
+
+// Stats helper: compute per-subject avg, pass rate, excellence rate
+function subjectStats(students, col, scoreFn) {
+  const vals = [];
+  for (const s of students) {
+    const c = s.courses[col];
+    if (c) {
+      const v = scoreFn(c);
+      if (typeof v === "number") vals.push(v);
+    }
+  }
+  if (vals.length === 0) return {avg: null, pass: null, excel: null};
+  const avg = Math.round(vals.reduce((a,b)=>a+b,0) / vals.length);
+  const pass = vals.filter(v => v >= 60).length / vals.length;
+  const excel = vals.filter(v => v >= 80).length / vals.length;
+  return {avg, pass: Math.round(pass*100)/100, excel: Math.round(excel*100)/100};
+}
+
+function addStatsSection(ws, students, mainCols, extraCols, avgCol, spacerCol, config, FONT) {
+  const V = "middle";
+  const YELLOW_FILL = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF9E0'}};
+  const PURPLE_FILL = {type:'pattern',pattern:'solid',fgColor:{argb:'FFF2C7FF'}};
+  const STAT_GREEN = {type:'pattern',pattern:'solid',fgColor:{argb:'FF92D050'}};
+  const STAT_RED = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFC9C7'}};
+  const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+  const PCT_FMT = '0%';
+  const allCols = [...mainCols, ...extraCols];
+  const isCompare = config.exams.length === 2;
+
+  // 4 empty rows
+  for (let i = 0; i < 4; i++) ws.addRow([]);
+
+  // Subject header row
+  const hdrRow = new Array(spacerCol + extraCols.length).fill(null);
+  for (let i = 0; i < mainCols.length; i++) hdrRow[3 + i] = mainCols[i];
+  hdrRow[avgCol - 1] = "平均"; // avgCol position (0-indexed = avgCol-1)
+  for (let i = 0; i < extraCols.length; i++) hdrRow[spacerCol + i] = extraCols[i];
+  const hr = ws.addRow(hdrRow);
+  hr.height = 19;
+  hr.eachCell(c => { c.font = {...FONT, bold:true}; c.alignment = {vertical:V, horizontal:"center"}; if (c.value && String(c.value).trim()) c.fill = YELLOW_FILL; });
+
+  // Helper to add a stats data row
+  function addStatRow(label, metricFn, fmt, isTrend) {
+    const rowData = new Array(spacerCol + extraCols.length).fill(null);
+    rowData[2] = label;
+    const mainVals = [];
+    for (let i = 0; i < mainCols.length; i++) {
+      const v = metricFn(mainCols[i]);
+      rowData[3 + i] = v;
+      if (typeof v === "number") mainVals.push(v);
+    }
+    // 平均 = average of mainCols only (exclude 音体美)
+    if (mainVals.length > 0) {
+      rowData[avgCol - 1] = Math.round(mainVals.reduce((a,b)=>a+b,0) / mainVals.length * 100) / 100;
+    }
+    for (let i = 0; i < extraCols.length; i++) {
+      const v = metricFn(extraCols[i]);
+      rowData[spacerCol + i] = v;
+    }
+    const r = ws.addRow(rowData);
+    r.height = 19;
+    r.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    r.getCell(3).font = {...FONT, bold:true};
+    if (fmt) {
+      for (let i = 0; i < mainCols.length; i++) r.getCell(4 + i).numFmt = fmt;
+      r.getCell(avgCol).numFmt = fmt;
+      for (let i = 0; i < extraCols.length; i++) r.getCell(spacerCol + 1 + i).numFmt = fmt;
+    }
+    if (isTrend) {
+      r.getCell(3).fill = PURPLE_FILL;
+      for (let i = 0; i < mainCols.length; i++) {
+        const cell = r.getCell(4 + i);
+        if (typeof cell.value === "number") cell.fill = cell.value >= 0 ? STAT_GREEN : STAT_RED;
+      }
+      const avgCell = r.getCell(avgCol);
+      if (typeof avgCell.value === "number") avgCell.fill = avgCell.value >= 0 ? STAT_GREEN : STAT_RED;
+      for (let i = 0; i < extraCols.length; i++) {
+        const cell = r.getCell(spacerCol + 1 + i);
+        if (typeof cell.value === "number") cell.fill = cell.value >= 0 ? STAT_GREEN : STAT_RED;
+      }
+    }
+    // Borders
+    for (let c = 3; c <= avgCol; c++) r.getCell(c).border = allBorder;
+    for (let i = 0; i < extraCols.length; i++) r.getCell(spacerCol + 1 + i).border = allBorder;
+    return r;
+  }
+
+  // Borders on header row
+  for (let c = 3; c <= avgCol; c++) hr.getCell(c).border = allBorder;
+  for (let i = 0; i < extraCols.length; i++) hr.getCell(spacerCol + 1 + i).border = allBorder;
+
+  // Compute stats for each exam
+  const statsPerExam = config.exams.map(exam => {
+    const result = {};
+    for (const col of allCols) {
+      result[col] = subjectStats(students, col, exam.fn);
+    }
+    return result;
+  });
+
+  // Helper: average of a metric across all subjects
+  function allSubjAvg(examIdx, metric) {
+    const vals = [];
+    for (const col of mainCols) {
+      const v = statsPerExam[examIdx][col]?.[metric];
+      if (typeof v === "number") vals.push(v);
+    }
+    return vals.length > 0 ? Math.round(vals.reduce((a,b)=>a+b,0) / vals.length * 100) / 100 : null;
+  }
+
+  // === 均分 ===
+  if (!isCompare) {
+    addStatRow("均分", col => statsPerExam[0][col]?.avg ?? null, '0');
+  } else {
+    addStatRow(config.exams[0].name + "平均分", col => statsPerExam[0][col]?.avg ?? null, '0');
+    addStatRow(config.exams[1].name + "平均分", col => statsPerExam[1][col]?.avg ?? null, '0');
+    // Trend row: per-subject (new-old)/old, 平均 column also (new-old)/old
+    const oldAvgAll = allSubjAvg(0, "avg");
+    const newAvgAll = allSubjAvg(1, "avg");
+    const r = addStatRow("趋势", col => {
+      const a = statsPerExam[0][col]?.avg;
+      const b = statsPerExam[1][col]?.avg;
+      if (a && b && a !== 0) return Math.round((b - a) / a * 100) / 100;
+      return null;
+    }, PCT_FMT, true);
+    // Override 平均 cell with (new-old)/old
+    if (oldAvgAll && newAvgAll && oldAvgAll !== 0) {
+      r.getCell(avgCol).value = Math.round((newAvgAll - oldAvgAll) / oldAvgAll * 100) / 100;
+      r.getCell(avgCol).numFmt = PCT_FMT;
+      r.getCell(avgCol).fill = r.getCell(avgCol).value >= 0 ? STAT_GREEN : STAT_RED;
+    }
+    ws.addRow([]);
+  }
+
+  // === 及格率 ===
+  if (!isCompare) {
+    addStatRow("及格率", col => statsPerExam[0][col]?.pass ?? null, PCT_FMT);
+  } else {
+    addStatRow(config.exams[0].name + "及格率", col => statsPerExam[0][col]?.pass ?? null, PCT_FMT);
+    addStatRow(config.exams[1].name + "及格率", col => statsPerExam[1][col]?.pass ?? null, PCT_FMT);
+    const oldPassAll = allSubjAvg(0, "pass");
+    const newPassAll = allSubjAvg(1, "pass");
+    const r = addStatRow("趋势", col => {
+      const a = statsPerExam[0][col]?.pass;
+      const b = statsPerExam[1][col]?.pass;
+      if (a !== null && b !== null) return Math.round((b - a) * 100) / 100;
+      return null;
+    }, PCT_FMT, true);
+    if (oldPassAll !== null && newPassAll !== null && oldPassAll !== 0) {
+      r.getCell(avgCol).value = Math.round((newPassAll - oldPassAll) / oldPassAll * 100) / 100;
+      r.getCell(avgCol).numFmt = PCT_FMT;
+      r.getCell(avgCol).fill = r.getCell(avgCol).value >= 0 ? STAT_GREEN : STAT_RED;
+    }
+    ws.addRow([]);
+  }
+
+  // === 优秀率 ===
+  if (!isCompare) {
+    addStatRow("优秀率", col => statsPerExam[0][col]?.excel ?? null, PCT_FMT);
+  } else {
+    addStatRow(config.exams[0].name + "优秀率", col => statsPerExam[0][col]?.excel ?? null, PCT_FMT);
+    addStatRow(config.exams[1].name + "优秀率", col => statsPerExam[1][col]?.excel ?? null, PCT_FMT);
+    const oldExcelAll = allSubjAvg(0, "excel");
+    const newExcelAll = allSubjAvg(1, "excel");
+    const r = addStatRow("趋势", col => {
+      const a = statsPerExam[0][col]?.excel;
+      const b = statsPerExam[1][col]?.excel;
+      if (a !== null && b !== null) return Math.round((b - a) * 100) / 100;
+      return null;
+    }, PCT_FMT, true);
+    if (oldExcelAll !== null && newExcelAll !== null && oldExcelAll !== 0) {
+      r.getCell(avgCol).value = Math.round((newExcelAll - oldExcelAll) / oldExcelAll * 100) / 100;
+      r.getCell(avgCol).numFmt = PCT_FMT;
+      r.getCell(avgCol).fill = r.getCell(avgCol).value >= 0 ? STAT_GREEN : STAT_RED;
+    }
+  }
+}
+
+async function dlExcel(students, mainCols, extraCols, withGPA = false) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("月考成绩统计");
+  const FONT = {name:"Arial", size:11};
+  const V = "middle";
+  const AVG_FMT = '0.0';
+  const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
+  const RED_FONT = {...FONT, color:{argb:'FFFF0000'}};
+
+  let classShort = "";
+  const cn = students[0]?.className || "";
+  const cnMatch = cn.match(/（(.+?)）/);
+  if (cnMatch) classShort = cnMatch[1] + "班";
+  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  let semPart = "";
+  const semStr = students[0]?.semester || "";
+  const ym = semStr.match(/(\d{4}-\d{4})学年/);
+  const sm = semStr.match(/第(\d)学期/);
+  if (ym && sm) semPart = ym[1] + "学年第" + sm[1] + "学期";
+
+  const title = classShort + semPart + "月考成绩数据";
+  const r1 = ws.addRow([title]);
+  r1.height = 40;
+  r1.getCell(1).font = {...FONT, bold:true, size:20};
+  r1.getCell(1).alignment = {vertical:V, horizontal:"center"};
+
+  const avgCol = 4 + mainCols.length;
+  const gpaCol = withGPA ? avgCol + 1 : null;
+  const edgeCol = withGPA ? avgCol + 1 : avgCol;
+  const spacerColX = edgeCol + 1;
+  ws.mergeCells(1, 1, 1, edgeCol);
+  if (extraCols.length > 0) {
+    const extStart = spacerColX + 1;
+    const extEnd = spacerColX + extraCols.length;
+    ws.mergeCells(1, extStart, 1, extEnd);
+    const ec = ws.getRow(1).getCell(extStart);
+    ec.value = "音体美";
+    ec.font = {...FONT, bold:true, size:20};
+    ec.alignment = {vertical:V, horizontal:"center"};
+  }
+
+  const headerData = ["序号", "姓名", "分数类别"];
+  for (const col of mainCols) headerData.push(col);
+  headerData.push("均分");
+  if (withGPA) headerData.push("GPA");
+  headerData.push("");
+  for (const col of extraCols) headerData.push(col);
+  
+  const hRow = ws.addRow(headerData);
+  hRow.height = 19;
+  hRow.eachCell(c => { c.font = {...FONT, bold:true}; c.alignment = {vertical:V, horizontal:"center"}; if (c.value && String(c.value).trim()) c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFFF9E0'}}; });
+
+  setColWidths(ws, mainCols, extraCols, edgeCol);
+
+  // Sort by 月考卷面均分 descending
+  const sorted = [...students].sort((a, b) => {
+    const aa = calcAvg(a, mainCols, c => c.testScore);
+    const bb = calcAvg(b, mainCols, c => c.testScore);
+    return (bb ?? -Infinity) - (aa ?? -Infinity);
+  });
+
+  for (let si = 0; si < sorted.length; si++) {
+    const s = sorted[si];
+
+    const testRow = [si + 1, s.cnName, "月考卷面"];
+    for (const col of mainCols) {
+      const c = s.courses[col];
+      testRow.push(c && c.testScore !== null && c.testScore !== undefined ? c.testScore : null);
+    }
+    testRow.push(calcAvg(s, mainCols, c => c.testScore));
+    if (withGPA) testRow.push(null);
+    testRow.push(null);
+    for (const col of extraCols) { const c = s.courses[col]; testRow.push(c && c.testScore !== null && c.testScore !== undefined ? c.testScore : null); }
+
+    const tr = ws.addRow(testRow);
+    tr.height = 19;
+    tr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    tr.getCell(avgCol).numFmt = AVG_FMT;
+    // Highlight: orange fill if course exists but no numeric test score; red font if < 70
+    for (let i = 0; i < mainCols.length; i++) {
+      const c = s.courses[mainCols[i]];
+      const cell = tr.getCell(4 + i);
+      if (c && typeof c.testScore !== "number") { cell.value = null; cell.fill = ORANGE_FILL; }
+      else if (c && c.testScore < 70) { cell.font = RED_FONT; }
+    }
+    for (let i = 0; i < extraCols.length; i++) {
+      const c = s.courses[extraCols[i]];
+      const cell = tr.getCell(spacerColX + 1 + i);
+      if (c && typeof c.testScore !== "number") { cell.value = null; cell.fill = ORANGE_FILL; }
+      else if (c && c.testScore < 70) { cell.font = RED_FONT; }
+    }
+
+    const semRow = [null, null, "学期成绩"];
+    for (const col of mainCols) { const c = s.courses[col]; semRow.push(c && c.semScore !== null ? c.semScore : null); }
+    semRow.push(calcAvg(s, mainCols, c => c.semScore));
+    if (withGPA) semRow.push(null);
+    semRow.push(null);
+    for (const col of extraCols) { const c = s.courses[col]; semRow.push(c && c.semScore !== null ? c.semScore : null); }
+
+    const sr = ws.addRow(semRow);
+    sr.height = 19;
+    sr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    sr.getCell(avgCol).numFmt = AVG_FMT;
+
+    const rowNum = 3 + si * 2;
+    ws.mergeCells(rowNum, 1, rowNum + 1, 1);
+    ws.mergeCells(rowNum, 2, rowNum + 1, 2);
+    if (withGPA) {
+      ws.mergeCells(rowNum, gpaCol, rowNum + 1, gpaCol);
+      const gpaCell = ws.getRow(rowNum).getCell(gpaCol);
+      gpaCell.value = calcStudentGPA(s); gpaCell.numFmt = '0.00'; gpaCell.font = FONT; gpaCell.alignment = {vertical:V, horizontal:"center"};
+    }
+  }
+
+  const lastRow = 2 + sorted.length * 2;
+  const lastCol = spacerColX + extraCols.length;
+  const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+  for (let r = 1; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= lastCol; c++) {
+      if (c === spacerColX) continue;
+      row.getCell(c).border = allBorder;
+    }
+  }
+
+  addStatsSection(ws, sorted, mainCols, extraCols, avgCol, spacerColX, {
+    exams: [{name:"月考", fn: c => c.testScore}]
+  }, FONT);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "月考成绩统计.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function dlCompare(students, mainCols, extraCols, withGPA = false) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("月考期中对比");
+  const FONT = {name:"Arial", size:11};
+  const V = "middle";
+  const AVG_FMT = '0.0';
+  const TREND_FMT = '0.0';
+  const GREEN_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFD5F5D5'}};
+  const RED_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFFD5D5'}};
+  const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
+  const RED_FONT = {...FONT, color:{argb:'FFFF0000'}};
+
+  let classShort = "";
+  const cn = students[0]?.className || "";
+  const cnMatch = cn.match(/（(.+?)）/);
+  if (cnMatch) classShort = cnMatch[1] + "班";
+  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  let semPart = "";
+  const semStr = students[0]?.semester || "";
+  const ym = semStr.match(/(\d{4}-\d{4})学年/);
+  const sm = semStr.match(/第(\d)学期/);
+  if (ym && sm) semPart = ym[1] + "学年第" + sm[1] + "学期";
+  const title = classShort + semPart + "月考/期中成绩对比";
+
+  const avgCol = 4 + mainCols.length;
+  const trendCol = avgCol + 1;
+  const gpaCol = withGPA ? trendCol + 1 : null;
+  const edgeCol = withGPA ? trendCol + 1 : trendCol;
+  const spacerColX = edgeCol + 1;
+
+  const r1 = ws.addRow([title]);
+  r1.height = 40;
+  r1.getCell(1).font = {...FONT, bold:true, size:20};
+  r1.getCell(1).alignment = {vertical:V, horizontal:"center"};
+  ws.mergeCells(1, 1, 1, edgeCol);
+  if (extraCols.length > 0) {
+    const extStart = spacerColX + 1;
+    const extEnd = spacerColX + extraCols.length;
+    ws.mergeCells(1, extStart, 1, extEnd);
+    const ec = ws.getRow(1).getCell(extStart);
+    ec.value = "音体美";
+    ec.font = {...FONT, bold:true, size:20};
+    ec.alignment = {vertical:V, horizontal:"center"};
+  }
+
+  const headerData = ["序号", "姓名", "分数类别"];
+  for (const col of mainCols) headerData.push(col);
+  headerData.push("均分");
+  headerData.push("趋势");
+  if (withGPA) headerData.push("GPA");
+  headerData.push(""); // spacer
+  for (const col of extraCols) headerData.push(col);
+
+  const hRow = ws.addRow(headerData);
+  hRow.height = 19;
+  hRow.eachCell(c => { c.font = {...FONT, bold:true}; c.alignment = {vertical:V, horizontal:"center"}; if (c.value && String(c.value).trim()) c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFFF9E0'}}; });
+
+  // Column widths
+  const totalCols = spacerColX + extraCols.length;
+  for (let c = 1; c <= totalCols; c++) ws.getColumn(c).width = DEFAULT_W;
+  ws.getColumn(1).width = 6.5;
+
+  // Sort by 期中卷面均分 descending
+  const sorted = [...students].sort((a, b) => {
+    const aa = calcAvg(a, mainCols, c => c.midScore);
+    const bb = calcAvg(b, mainCols, c => c.midScore);
+    return (bb ?? -Infinity) - (aa ?? -Infinity);
+  });
+
+  for (let si = 0; si < sorted.length; si++) {
+    const s = sorted[si];
+
+    function buildRow(label, getScore) {
+      const row = [label === "月考卷面" ? si + 1 : null, label === "月考卷面" ? s.cnName : null, label];
+      for (const col of mainCols) {
+        const c = s.courses[col];
+        const v = c ? getScore(c) : null;
+        row.push(v !== null && v !== undefined ? v : null);
+      }
+      row.push(calcAvg(s, mainCols, getScore));
+      row.push(null); // trend
+      if (withGPA) row.push(null); // GPA
+      row.push(null); // spacer
+      for (const col of extraCols) {
+        const c = s.courses[col];
+        const v = c ? getScore(c) : null;
+        row.push(v !== null && v !== undefined ? v : null);
+      }
+      return row;
+    }
+
+    const tr = ws.addRow(buildRow("月考卷面", c => c.testScore));
+    tr.height = 19;
+    tr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    tr.getCell(avgCol).numFmt = AVG_FMT;
+
+    const mr = ws.addRow(buildRow("期中卷面", c => c.midScore));
+    mr.height = 19;
+    mr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    mr.getCell(avgCol).numFmt = AVG_FMT;
+    for (let i = 0; i < mainCols.length; i++) {
+      const c = s.courses[mainCols[i]];
+      const cell = mr.getCell(4 + i);
+      if (c && typeof c.midScore !== "number") { cell.value = null; cell.fill = ORANGE_FILL; }
+      else if (c && c.midScore < 70) { cell.font = RED_FONT; }
+    }
+    for (let i = 0; i < extraCols.length; i++) {
+      const c = s.courses[extraCols[i]];
+      const cell = mr.getCell(spacerColX + 1 + i);
+      if (c && typeof c.midScore !== "number") { cell.value = null; cell.fill = ORANGE_FILL; }
+      else if (c && c.midScore < 70) { cell.font = RED_FONT; }
+    }
+
+    const sr = ws.addRow(buildRow("学期成绩", c => c.semScore));
+    sr.height = 19;
+    sr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    sr.getCell(avgCol).numFmt = AVG_FMT;
+
+    // Trend: 期中均分 - 月考均分
+    const midA = calcAvg(s, mainCols, c => c.midScore);
+    const testA = calcAvg(s, mainCols, c => c.testScore);
+    const trend = (midA !== null && testA !== null) ? Math.round((midA - testA) * 10) / 10 : null;
+
+    const rowNum = 3 + si * 3;
+    ws.mergeCells(rowNum, 1, rowNum + 2, 1);
+    ws.mergeCells(rowNum, 2, rowNum + 2, 2);
+    ws.mergeCells(rowNum, trendCol, rowNum + 2, trendCol);
+
+    const trendCell = ws.getRow(rowNum).getCell(trendCol);
+    trendCell.value = trend;
+    trendCell.numFmt = TREND_FMT;
+    trendCell.font = FONT;
+    trendCell.alignment = {vertical:V, horizontal:"center"};
+    if (trend !== null) {
+      trendCell.fill = trend >= 0 ? GREEN_FILL : RED_FILL;
+    }
+
+    if (withGPA) {
+      ws.mergeCells(rowNum, gpaCol, rowNum + 2, gpaCol);
+      const gc = ws.getRow(rowNum).getCell(gpaCol);
+      gc.value = calcStudentGPA(s); gc.numFmt = '0.00'; gc.font = FONT; gc.alignment = {vertical:V, horizontal:"center"};
+    }
+  }
+
+  const lastRow = 2 + sorted.length * 3;
+  const lastCol = spacerColX + extraCols.length;
+  
+  const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+  for (let r = 1; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= lastCol; c++) {
+      if (c === spacerColX) continue;
+      row.getCell(c).border = allBorder;
+    }
+  }
+
+  addStatsSection(ws, sorted, mainCols, extraCols, avgCol, spacerColX, {
+    exams: [{name:"月考", fn: c => c.testScore}, {name:"期中", fn: c => c.midScore}]
+  }, FONT);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "月考期中对比.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function dlMidFinal(students, mainCols, extraCols, withGPA = false) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("期中期末对比");
+  const FONT = {name:"Arial", size:11};
+  const V = "middle";
+  const AVG_FMT = '0.0';
+  const TREND_FMT = '0.0';
+  const GREEN_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFD5F5D5'}};
+  const RED_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFFD5D5'}};
+  const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
+  const RED_FONT = {...FONT, color:{argb:'FFFF0000'}};
+
+  let classShort = "";
+  const cn = students[0]?.className || "";
+  const cnMatch = cn.match(/（(.+?)）/);
+  if (cnMatch) classShort = cnMatch[1] + "班";
+  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  let semPart = "";
+  const semStr = students[0]?.semester || "";
+  const ym = semStr.match(/(\d{4}-\d{4})学年/);
+  const sm = semStr.match(/第(\d)学期/);
+  if (ym && sm) semPart = ym[1] + "学年第" + sm[1] + "学期";
+  const title = classShort + semPart + "期中/期末成绩对比";
+
+  const avgCol = 4 + mainCols.length;
+  const trendCol = avgCol + 1;
+  const gpaCol = withGPA ? trendCol + 1 : null;
+  const edgeCol = withGPA ? trendCol + 1 : trendCol;
+  const spacerColX = edgeCol + 1;
+
+  const r1 = ws.addRow([title]);
+  r1.height = 40;
+  r1.getCell(1).font = {...FONT, bold:true, size:20};
+  r1.getCell(1).alignment = {vertical:V, horizontal:"center"};
+  ws.mergeCells(1, 1, 1, edgeCol);
+  if (extraCols.length > 0) {
+    const extStart = spacerColX + 1;
+    const extEnd = spacerColX + extraCols.length;
+    ws.mergeCells(1, extStart, 1, extEnd);
+    const ec = ws.getRow(1).getCell(extStart);
+    ec.value = "音体美";
+    ec.font = {...FONT, bold:true, size:20};
+    ec.alignment = {vertical:V, horizontal:"center"};
+  }
+
+  const headerData = ["序号", "姓名", "分数类别"];
+  for (const col of mainCols) headerData.push(col);
+  headerData.push("均分");
+  headerData.push("趋势");
+  if (withGPA) headerData.push("GPA");
+  headerData.push("");
+  for (const col of extraCols) headerData.push(col);
+
+  const hRow = ws.addRow(headerData);
+  hRow.height = 19;
+  hRow.eachCell(c => { c.font = {...FONT, bold:true}; c.alignment = {vertical:V, horizontal:"center"}; if (c.value && String(c.value).trim()) c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFFF9E0'}}; });
+
+  const totalCols = spacerColX + extraCols.length;
+  for (let c = 1; c <= totalCols; c++) ws.getColumn(c).width = DEFAULT_W;
+  ws.getColumn(1).width = 6.5;
+
+  // Sort by 期末卷面均分 descending
+  const sorted = [...students].sort((a, b) => {
+    const aa = calcAvg(a, mainCols, c => c.finalScore);
+    const bb = calcAvg(b, mainCols, c => c.finalScore);
+    return (bb ?? -Infinity) - (aa ?? -Infinity);
+  });
+
+  for (let si = 0; si < sorted.length; si++) {
+    const s = sorted[si];
+
+    function buildRow(label, getScore) {
+      const row = [label === "期中卷面" ? si + 1 : null, label === "期中卷面" ? s.cnName : null, label];
+      for (const col of mainCols) {
+        const c = s.courses[col];
+        const v = c ? getScore(c) : null;
+        row.push(v !== null && v !== undefined ? v : null);
+      }
+      row.push(calcAvg(s, mainCols, getScore));
+      row.push(null); // trend
+      if (withGPA) row.push(null); // GPA
+      row.push(null); // spacer
+      for (const col of extraCols) {
+        const c = s.courses[col];
+        const v = c ? getScore(c) : null;
+        row.push(v !== null && v !== undefined ? v : null);
+      }
+      return row;
+    }
+
+    const mr = ws.addRow(buildRow("期中卷面", c => c.midScore));
+    mr.height = 19;
+    mr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    mr.getCell(avgCol).numFmt = AVG_FMT;
+
+    const fr = ws.addRow(buildRow("期末卷面", c => c.finalScore));
+    fr.height = 19;
+    fr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    fr.getCell(avgCol).numFmt = AVG_FMT;
+    for (let i = 0; i < mainCols.length; i++) {
+      const c = s.courses[mainCols[i]];
+      const cell = fr.getCell(4 + i);
+      if (c && typeof c.finalScore !== "number") { cell.value = null; cell.fill = ORANGE_FILL; }
+      else if (c && c.finalScore < 70) { cell.font = RED_FONT; }
+    }
+    for (let i = 0; i < extraCols.length; i++) {
+      const c = s.courses[extraCols[i]];
+      const cell = fr.getCell(spacerColX + 1 + i);
+      if (c && typeof c.finalScore !== "number") { cell.value = null; cell.fill = ORANGE_FILL; }
+      else if (c && c.finalScore < 70) { cell.font = RED_FONT; }
+    }
+
+    const sr = ws.addRow(buildRow("学期成绩", c => c.semScore));
+    sr.height = 19;
+    sr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+    sr.getCell(avgCol).numFmt = AVG_FMT;
+
+    // Trend: 期末均分 - 期中均分
+    const finalA = calcAvg(s, mainCols, c => c.finalScore);
+    const midA = calcAvg(s, mainCols, c => c.midScore);
+    const trend = (finalA !== null && midA !== null) ? Math.round((finalA - midA) * 10) / 10 : null;
+
+    const rowNum = 3 + si * 3;
+    ws.mergeCells(rowNum, 1, rowNum + 2, 1);
+    ws.mergeCells(rowNum, 2, rowNum + 2, 2);
+    ws.mergeCells(rowNum, trendCol, rowNum + 2, trendCol);
+
+    const trendCell = ws.getRow(rowNum).getCell(trendCol);
+    trendCell.value = trend;
+    trendCell.numFmt = TREND_FMT;
+    trendCell.font = FONT;
+    trendCell.alignment = {vertical:V, horizontal:"center"};
+    if (trend !== null) {
+      trendCell.fill = trend >= 0 ? GREEN_FILL : RED_FILL;
+    }
+
+    if (withGPA) {
+      ws.mergeCells(rowNum, gpaCol, rowNum + 2, gpaCol);
+      const gc = ws.getRow(rowNum).getCell(gpaCol);
+      gc.value = calcStudentGPA(s); gc.numFmt = '0.00'; gc.font = FONT; gc.alignment = {vertical:V, horizontal:"center"};
+    }
+  }
+
+  const lastRow = 2 + sorted.length * 3;
+  const lastCol = spacerColX + extraCols.length;
+  
+  const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+  for (let r = 1; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= lastCol; c++) {
+      if (c === spacerColX) continue;
+      row.getCell(c).border = allBorder;
+    }
+  }
+
+  addStatsSection(ws, sorted, mainCols, extraCols, avgCol, spacerColX, {
+    exams: [{name:"期中", fn: c => c.midScore}, {name:"期末", fn: c => c.finalScore}]
+  }, FONT);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "期中期末对比.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+let outputData = null;
+
+// ===== Individual student report functions =====
+
+const SCHOOL_LOGO_B64 = "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";
+
+// ===== Vertical individual score card builder =====
+function buildVerticalCards(wb, students, mainCols, extraCols, cfg, withGPA) {
+  // cfg.sheetName, cfg.titleLine2, cfg.scoreHeaders ["月考","综合成绩"],
+  // cfg.getScores(course) => [v1,v2,...], cfg.getAvgs(student,mainCols) => [a1,a2,...],
+  // cfg.getExtraScores(course) => [v1,v2,...], cfg.lightCol (0-based index of gray score col, null for none),
+  // cfg.getTrend(student,mainCols) => number|null, cfg.sortFn(student,mainCols) => number,
+  // cfg.fileName
+
+  const BLUE = '2B4C7E';
+  const V = 'middle';
+  const F = {name:'Microsoft YaHei', size:10, color:{argb:'FF333333'}};
+  const F_BOLD = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF333333'}};
+  const F_HEAD = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FFFFFFFF'}};
+  const F_GRAY9 = {name:'Microsoft YaHei', size:9, color:{argb:'FF999999'}};
+  const F_GRAY9B = {name:'Microsoft YaHei', size:9, bold:true, color:{argb:'FF999999'}};
+  const F_AVG = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF'+BLUE}};
+  const F_AVG_LIGHT = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF8FAABE'}};
+  const F_LIGHT = {name:'Microsoft YaHei', size:10, color:{argb:'FF999999'}};
+  const F_RED = {name:'Microsoft YaHei', size:10, color:{argb:'FFEE0000'}};
+  const F_GREEN_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF2E7D32'}};
+  const F_RED_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FFEE0000'}};
+  const F_BLUE_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF'+BLUE}};
+  const F_DARK_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF222222'}};
+  const HEADER_BG = {type:'pattern', pattern:'solid', fgColor:{argb:'FF'+BLUE}};
+  const ZEBRA = {type:'pattern', pattern:'solid', fgColor:{argb:'FFF4F6F9'}};
+  const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
+  const MED = {style:'medium', color:{argb:'FF'+BLUE}};
+  const BLUE_TOP_B = {top:MED};
+  const AL_L1 = {horizontal:'left', vertical:V, indent:1};
+  const AL_C = {horizontal:'center', vertical:V};
+  const AL_R = {horizontal:'right', vertical:V};
+
+  const nScores = cfg.scoreHeaders.length;
+  const subjCol = 4;
+  const firstSC = 5;
+  const lastSC = 4 + nScores;
+  const frameR = lastSC + 1;
+
+  // Parse class/semester info
+  let classShort = "";
+  const cn = students[0]?.className || "";
+  const cnM = cn.match(/（(.+?)）/);
+  if (cnM) classShort = cnM[1] + "班";
+  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
+  let semPart = "";
+  const semStr = students[0]?.semester || "";
+  const ym = semStr.match(/(\d{4}-\d{4})学年/);
+  const sm = semStr.match(/第(\d)学期/);
+  if (ym && sm) semPart = ym[1]+"学年第"+sm[1]+"学期";
+
+  const sorted = [...students].sort((a,b) => {
+    const aa = cfg.sortFn(a, mainCols);
+    const bb = cfg.sortFn(b, mainCols);
+    return (bb ?? -Infinity) - (aa ?? -Infinity);
+  });
+
+  for (let si = 0; si < sorted.length; si++) {
+    const s = sorted[si];
+    const ws = wb.addWorksheet(s.cnName || ("学生"+(si+1)));
+    ws.views = [{showGridLines: false}];
+
+    // Column widths
+    ws.getColumn(1).width = 8;
+    ws.getColumn(2).width = 3;
+    ws.getColumn(3).width = 1.2;
+    ws.getColumn(subjCol).width = 18;
+    for (let c = firstSC; c <= lastSC; c++) ws.getColumn(c).width = 12;
+    ws.getColumn(frameR).width = 3;
+    ws.getColumn(frameR+1).width = 1.2;
+    ws.getColumn(frameR+2).width = 2;
+
+    function addR(h) { const r = ws.addRow([]); r.height = h; return r; }
+    function setCell(row, col, val, font, align, fill, border) {
+      const c = ws.getRow(row).getCell(col);
+      if (val !== undefined && val !== null) c.value = val;
+      if (font) c.font = font;
+      if (align) c.alignment = align;
+      if (fill) c.fill = fill;
+      if (border) c.border = border;
+      return c;
+    }
+
+    // Row 1: outer top
+    addR(36);
+    // Row 2: frame top
+    const frameStart = 2;
+    addR(8);
+    // Row 3: inner spacer
+    addR(16);
+    // Row 4: semester
+    addR(20);
+    setCell(4, subjCol, semPart, {name:'Microsoft YaHei', size:12, color:{argb:'FF888888'}}, {vertical:V});
+    // Row 5: report type
+    addR(14);
+    setCell(5, subjCol, cfg.titleLine2, {name:'Microsoft YaHei', size:10, color:{argb:'FF888888'}}, {vertical:V});
+    // Row 6: spacer
+    addR(10);
+    // Row 7: student name
+    addR(32);
+    setCell(7, subjCol, s.cnName, {name:'Microsoft YaHei', size:14, bold:true, color:{argb:'FF'+BLUE}}, {vertical:V});
+    // Row 8: spacer
+    addR(4);
+    // Row 9: header
+    addR(30);
+    setCell(9, subjCol, "科目", F_HEAD, AL_L1, HEADER_BG);
+    for (let i = 0; i < nScores; i++) {
+      setCell(9, firstSC+i, cfg.scoreHeaders[i], F_HEAD, AL_C, HEADER_BG);
+    }
+
+    // Filter to only subjects this student has scores for
+    const stuMainCols = mainCols.filter(col => {
+      const c = s.courses[col];
+      if (!c) return false;
+      const scores = cfg.getScores(c);
+      return scores.some(v => v !== null && v !== undefined);
+    });
+    const stuExtraCols = extraCols.filter(col => {
+      const c = s.courses[col];
+      if (!c) return false;
+      const scores = cfg.getExtraScores(c);
+      return scores.some(v => v !== null && v !== undefined);
+    });
+
+    // Data rows starting at row 10
+    let curRow = 10;
+    for (let di = 0; di < stuMainCols.length; di++) {
+      const col = stuMainCols[di];
+      const course = s.courses[col];
+      const scores = course ? cfg.getScores(course) : new Array(nScores).fill(null);
+      const r = addR(26);
+      const fill = di % 2 === 1 ? ZEBRA : undefined;
+      setCell(curRow, subjCol, col, F, AL_L1, fill);
+      for (let j = 0; j < nScores; j++) {
+        const v = scores[j];
+        const isNum = typeof v === 'number';
+        let font = F;
+        if (cfg.lightCol !== null && j === cfg.lightCol) font = F_LIGHT;
+        if (isNum && v < 70 && j === cfg.highlightCol) font = F_RED;
+        if (!isNum && v !== null && v !== undefined && typeof v === 'string') {
+          setCell(curRow, firstSC+j, null, font, AL_C, ORANGE_FILL);
+        } else {
+          setCell(curRow, firstSC+j, isNum ? v : null, font, AL_C, fill);
+          if (!isNum && course) { setCell(curRow, firstSC+j, null, font, AL_C, ORANGE_FILL); }
+        }
+      }
+      curRow++;
+    }
+
+    // 均分 row
+    const avgRow = curRow;
+    addR(26);
+    setCell(avgRow, subjCol, "均分", F_AVG, AL_L1, undefined, BLUE_TOP_B);
+    const avgs = cfg.getAvgs(s, stuMainCols);
+    for (let j = 0; j < nScores; j++) {
+      const font = (cfg.lightCol !== null && j === cfg.lightCol) ? F_AVG_LIGHT : F_AVG;
+      const c = setCell(avgRow, firstSC+j, avgs[j], font, AL_C, undefined, BLUE_TOP_B);
+      c.numFmt = '0.0';
+    }
+    curRow++;
+
+    // Spacer
+    addR(10); curRow++;
+
+    // 音体美 (only if student has any)
+    if (stuExtraCols.length > 0) {
+    addR(20);
+    setCell(curRow, subjCol, "音体美", F_GRAY9B, AL_L1);
+    curRow++;
+    for (let ei = 0; ei < stuExtraCols.length; ei++) {
+      const col = stuExtraCols[ei];
+      const course = s.courses[col];
+      const scores = course ? cfg.getExtraScores(course) : new Array(nScores).fill(null);
+      addR(22);
+      setCell(curRow, subjCol, col, F_GRAY9, AL_L1);
+      for (let j = 0; j < nScores; j++) {
+        const v = scores[j];
+        setCell(curRow, firstSC+j, typeof v === 'number' ? v : null, F_GRAY9, AL_C);
+      }
+      curRow++;
+    }
+    }
+
+    // Spacer
+    addR(10); curRow++;
+
+    // Trend row (only for compare versions)
+    const hasTrend = cfg.getTrend !== null;
+    if (hasTrend) {
+      addR(26);
+      setCell(curRow, lastSC-1, "均分趋势", F_BLUE_B, AL_R);
+      const trend = cfg.getTrend(s, stuMainCols);
+      const tStr = trend !== null ? (trend >= 0 ? "+"+trend.toFixed(1) : trend.toFixed(1)) : null;
+      const tc = setCell(curRow, lastSC, trend, trend !== null && trend >= 0 ? F_GREEN_B : F_RED_B, AL_C);
+      if (trend !== null) tc.numFmt = '+0.0;-0.0;0.0';
+      curRow++;
+    }
+
+    // GPA row
+    if (withGPA) {
+      addR(hasTrend ? 16 : 20);
+      const gpaLabelCol = hasTrend ? lastSC-1 : lastSC-1;
+      const gpaValCol = hasTrend ? lastSC : lastSC;
+      const AL_RT = {horizontal:'right', vertical:'top'};
+      const AL_CT = {horizontal:'center', vertical:'top'};
+      setCell(curRow, gpaLabelCol, "GPA", F_BLUE_B, AL_RT);
+      const gpa = calcStudentGPA(s);
+      const c = setCell(curRow, gpaValCol, gpa, F_DARK_B, AL_CT);
+      c.numFmt = '0.00';
+      curRow++;
+    }
+
+    // Bottom spacer
+    const frameEnd = curRow;
+    addR(16); curRow++;
+    // Outer bottom
+    addR(8);
+
+    // Frame borders
+    for (let r = frameStart; r <= frameEnd; r++) {
+      ws.getRow(r).getCell(2).border = {
+        left: MED,
+        top: r === frameStart ? MED : undefined,
+        bottom: r === frameEnd ? MED : undefined,
+      };
+      ws.getRow(r).getCell(frameR+1).border = {
+        right: MED,
+        top: r === frameStart ? MED : undefined,
+        bottom: r === frameEnd ? MED : undefined,
+      };
+      if (r === frameStart || r === frameEnd) {
+        for (let c = 3; c <= frameR; c++) {
+          const existing = ws.getRow(r).getCell(c).border || {};
+          ws.getRow(r).getCell(c).border = {
+            ...existing,
+            top: r === frameStart ? MED : existing.top,
+            bottom: r === frameEnd ? MED : existing.bottom,
+          };
+        }
+      }
+    }
+
+    // Re-apply avg row blue top (frame pass may overwrite)
+    for (let c = subjCol; c <= lastSC; c++) {
+      ws.getRow(avgRow).getCell(c).border = BLUE_TOP_B;
+    }
+
+    // Add school logo (right-aligned in last score column, top-aligned with semester row)
+    const logoId = wb.addImage({base64: SCHOOL_LOGO_B64, extension: 'png'});
+    // Merge last score column rows 4-5 for logo area
+    ws.mergeCells(4, lastSC, 5, lastSC);
+    // Position: 0-based col = lastSC-1, offset 483000 EMU (~51px) to right-align 35px logo in ~86px column
+    ws.addImage(logoId, {
+      tl: {nativeCol: lastSC - 1, nativeColOff: 483000, nativeRow: 3, nativeRowOff: 0},
+      ext: {width: 35, height: 50}
+    });
+  }
+}
+
+async function dlExcelIndiv(students, mainCols, extraCols, withGPA = false) {
+  const wb = new ExcelJS.Workbook();
+  buildVerticalCards(wb, students, mainCols, extraCols, {
+    sheetName: "月考成绩条",
+    titleLine2: "月考成绩",
+    scoreHeaders: ["月考", "综合成绩"],
+    getScores: c => [c.testScore, c.semScore],
+    getExtraScores: c => [c.testScore, c.semScore],
+    getAvgs: (s, mc) => [calcAvg(s, mc, c=>c.testScore), calcAvg(s, mc, c=>c.semScore)],
+    lightCol: null,
+    highlightCol: 0,
+    getTrend: null,
+    sortFn: (s, mc) => calcAvg(s, mc, c=>c.testScore),
+  }, withGPA);
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "月考学生成绩条.xlsx"; a.click(); URL.revokeObjectURL(a.href);
+}
+
+async function dlCompareIndiv(students, mainCols, extraCols, withGPA = false) {
+  const wb = new ExcelJS.Workbook();
+  buildVerticalCards(wb, students, mainCols, extraCols, {
+    sheetName: "月考期中成绩条",
+    titleLine2: "月考/期中成绩对比",
+    scoreHeaders: ["月考", "期中", "综合成绩"],
+    getScores: c => [c.testScore, c.midScore, c.semScore],
+    getExtraScores: c => [c.testScore, c.midScore, c.semScore],
+    getAvgs: (s, mc) => [calcAvg(s, mc, c=>c.testScore), calcAvg(s, mc, c=>c.midScore), calcAvg(s, mc, c=>c.semScore)],
+    lightCol: 0,
+    highlightCol: 1,
+    getTrend: (s, mc) => {
+      const m = calcAvg(s, mc, c=>c.midScore), t = calcAvg(s, mc, c=>c.testScore);
+      return (m !== null && t !== null) ? Math.round((m-t)*10)/10 : null;
+    },
+    sortFn: (s, mc) => calcAvg(s, mc, c=>c.midScore),
+  }, withGPA);
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "月考期中学生成绩条.xlsx"; a.click(); URL.revokeObjectURL(a.href);
+}
+
+async function dlMidFinalIndiv(students, mainCols, extraCols, withGPA = false) {
+  const wb = new ExcelJS.Workbook();
+  buildVerticalCards(wb, students, mainCols, extraCols, {
+    sheetName: "期中期末成绩条",
+    titleLine2: "期中/期末成绩对比",
+    scoreHeaders: ["期中", "期末", "综合成绩"],
+    getScores: c => [c.midScore, c.finalScore, c.semScore],
+    getExtraScores: c => [c.midScore, c.finalScore, c.semScore],
+    getAvgs: (s, mc) => [calcAvg(s, mc, c=>c.midScore), calcAvg(s, mc, c=>c.finalScore), calcAvg(s, mc, c=>c.semScore)],
+    lightCol: 0,
+    highlightCol: 1,
+    getTrend: (s, mc) => {
+      const f = calcAvg(s, mc, c=>c.finalScore), m = calcAvg(s, mc, c=>c.midScore);
+      return (f !== null && m !== null) ? Math.round((f-m)*10)/10 : null;
+    },
+    sortFn: (s, mc) => calcAvg(s, mc, c=>c.finalScore),
+  }, withGPA);
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "期中期末学生成绩条.xlsx"; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ===== Makeup exam list functions =====
+
+// Makeup exam subject grouping: maps courseScores key -> broader category
+const MAKEUP_GROUP = {
+  "AP预备微积分":"数学","AP微积分":"数学","AP统计":"数学","数学":"数学",
+  "AP物理1":"物理","AP物理2":"物理","AP物理C":"物理","物理":"物理",
+  "AP化学":"化学","化学":"化学",
+  "生物一册":"生物","生物二册":"生物","AP生物":"生物","生物":"生物",
+  "语文一册":"语文","语文二册":"语文",
+  "计算机":"经济学/AP计算机","AP计算机科学":"经济学/AP计算机","AP微观经济":"经济学/AP计算机","AP宏观经济":"经济学/AP计算机","AP宏观经济学":"经济学/AP计算机","经济学":"经济学/AP计算机",
+};
+const MAKEUP_ORDER = [
+  "听说","读写","托福课程","文书写作","英美文学","文学",
+  "数学","物理","化学","生物","语文",
+  "经济学/AP计算机",
+  "美国历史","世界历史","中国历史","AP心理学","AP研讨会","知识论TOK",
+  "美术","戏剧","小语种","音乐","体育",
+];
+
+function buildMakeupData(students, scoreFn) {
+  // Group: subject category -> class name -> [{name, score}]
+  const groups = {};
+  for (const s of students) {
+    for (const key of Object.keys(s.courses)) {
+      const c = s.courses[key];
+      const score = scoreFn(c);
+      if (typeof score === "number" && score < 70) {
+        const subject = MAKEUP_GROUP[key] || key;
+        const cls = c.courseClassName || c.courseCN || key;
+        if (!groups[subject]) groups[subject] = {};
+        if (!groups[subject][cls]) groups[subject][cls] = [];
+        groups[subject][cls].push({name: s.cnName, score: score});
+      }
+    }
+  }
+  return groups;
+}
+
+async function dlMakeup(students, mainCols, extraCols, examType) {
+  const isMid = examType === "mid";
+  const scoreFn = isMid ? (c => c.midScore) : (c => c.finalScore);
+  const groups = buildMakeupData(students, scoreFn);
+  
+  if (Object.keys(groups).length === 0) {
+    alert(isMid ? "没有期中考试低于70分的学生" : "没有期末考试低于70分的学生");
+    return;
+  }
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("建议补考名单");
+  ws.views = [{showGridLines: false}];
+  const FONT = {name:"Arial", size:11};
+  const V = "middle";
+  const BLUE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFDCE6F1'}};
+  const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+
+  let classShort = "";
+  const cn = students[0]?.className || "";
+  const cnMatch = cn.match(/（(.+?)）/);
+  if (cnMatch) classShort = cnMatch[1] + "班";
+  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  let semPart = "";
+  const semStr = students[0]?.semester || "";
+  const ym = semStr.match(/(\d{4}-\d{4})学年/);
+  const sm = semStr.match(/第(\d)学期/);
+  if (ym && sm) semPart = ym[1] + "学年第" + sm[1] + "学期";
+
+  const examLabel = isMid ? "期中" : "期末";
+  const titleText = semPart + " " + classShort + " " + examLabel + "建议补考学生名单";
+  const r1 = ws.addRow([""]);
+  r1.height = 60;
+  r1.getCell(1).value = {richText: [
+    {font: {name:"Arial", size:17, bold:true}, text: titleText + "\n"},
+    {font: {name:"Arial", size:12, color:{argb:'FF666666'}}, text: "卷面成绩低于70分自动加入建议补考名单"}
+  ]};
+  r1.getCell(1).alignment = {vertical:V, horizontal:"center", wrapText:true};
+
+  const hRow = ws.addRow(["科目", "班级", "建议补考学生名单"]);
+  hRow.height = 35;
+  hRow.eachCell(c => { c.font = {...FONT, bold:true, size:12}; c.alignment = {vertical:V, horizontal:"center"}; c.fill = BLUE_FILL; c.border = allBorder; });
+
+  ws.getColumn(1).width = 14;
+  ws.getColumn(2).width = 30;
+
+  // Determine subject ordering for makeup list
+  const MAKEUP_ORDER = [
+    "听说","读写","托福课程","文书写作","英美文学",
+    "文学","数学",
+    "物理","生物","化学",
+    "语文",
+    "经济学/AP计算机","AP心理学","AP研讨会",
+    "美国历史","世界历史","中国历史",
+    "小语种","美术","戏剧","音乐","体育",
+    "计算机","知识论TOK","Capstone",
+  ];
+  const orderedSubjects = Object.keys(groups).sort((a, b) => {
+    const ia = MAKEUP_ORDER.indexOf(a);
+    const ib = MAKEUP_ORDER.indexOf(b);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+
+  let maxStudents = 0;
+  for (const subj of orderedSubjects) {
+    for (const cls of Object.keys(groups[subj])) {
+      maxStudents = Math.max(maxStudents, groups[subj][cls].length);
+    }
+  }
+  for (let c = 3; c <= 2 + maxStudents; c++) ws.getColumn(c).width = 12;
+  if (maxStudents > 1) {
+    ws.mergeCells(2, 3, 2, 2 + maxStudents);
+  }
+
+  // Helper: strip semester prefix from class names
+  function cleanClassName(cls) {
+    // Remove patterns like "25秋 ", "25春 ", "金盏26春", "25 金盏..."
+    return cls.replace(/^(?:\d{2,4}\s*)?(?:金盏|北外)?\d{0,4}[秋春]\s*/,"").replace(/^\d{2,4}\s+/,"").trim();
+  }
+
+  const RED_FONT_M = {...FONT, size:10, color:{argb:'FF999999'}};
+
+  for (const subj of orderedSubjects) {
+    const classes = Object.keys(groups[subj]).sort();
+    const groupStartRow = ws.rowCount + 1;
+    for (const cls of classes) {
+      const entries = groups[subj][cls].sort((a, b) => a.score - b.score);
+      // Name row
+      const nameRow = ["", cleanClassName(cls), ...entries.map(e => e.name)];
+      const nr = ws.addRow(nameRow);
+      nr.height = 30;
+      nr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+      // Score row
+      const scoreRow = ["", "", ...entries.map(e => e.score)];
+      const sr = ws.addRow(scoreRow);
+      sr.height = 16;
+      sr.eachCell(c => { c.font = RED_FONT_M; c.alignment = {vertical:V, horizontal:"center"}; });
+      // Merge 班级 cell across two rows
+      const nrNum = nr.number;
+      ws.mergeCells(nrNum, 2, nrNum + 1, 2);
+      ws.getRow(nrNum).getCell(2).alignment = {vertical:V, indent:1};
+    }
+    const groupEndRow = ws.rowCount;
+    if (groupEndRow >= groupStartRow) {
+      if (groupEndRow > groupStartRow) {
+        ws.mergeCells(groupStartRow, 1, groupEndRow, 1);
+      }
+      const subjCell = ws.getRow(groupStartRow).getCell(1);
+      subjCell.value = subj;
+      subjCell.font = {...FONT, bold:true};
+      subjCell.alignment = {vertical:V, horizontal:"center"};
+    }
+  }
+
+  // Full grid borders: from header row (2) to last data row, columns 1 to (2 + maxStudents)
+  const lastDataRow = ws.rowCount;
+  const lastCol = 2 + maxStudents;
+  for (let r = 2; r <= lastDataRow; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= lastCol; c++) {
+      row.getCell(c).border = allBorder;
+    }
+  }
+
+  // Merge title row
+  ws.mergeCells(1, 1, 1, Math.max(3, lastCol));
+
+  // === Sheet 2: By student ===
+  const ws2 = wb.addWorksheet("各学生建议补考科目");
+  ws2.views = [{showGridLines: false}];
+
+  const title2Text = semPart + " " + classShort + " " + examLabel + "各学生建议补考科目";
+  const r1s2 = ws2.addRow([""]);
+  r1s2.height = 60;
+  r1s2.getCell(1).value = {richText: [
+    {font: {name:"Arial", size:17, bold:true}, text: title2Text + "\n"},
+    {font: {name:"Arial", size:12, color:{argb:'FF666666'}}, text: "卷面成绩低于70分自动加入建议补考名单"}
+  ]};
+  r1s2.getCell(1).alignment = {vertical:V, horizontal:"center", wrapText:true};
+
+  const hRow2 = ws2.addRow(["姓名", "建议补考科目", "班级", "卷面分数"]);
+  hRow2.height = 35;
+  hRow2.eachCell(c => { c.font = {...FONT, bold:true, size:12}; c.alignment = {vertical:V, horizontal:"center"}; c.fill = BLUE_FILL; c.border = allBorder; });
+
+  ws2.getColumn(1).width = 14;
+  ws2.getColumn(2).width = 18;
+  ws2.getColumn(3).width = 28;
+  ws2.getColumn(4).width = 14;
+
+  // Collect all entries grouped by student
+  const byStudent = {};
+  for (const subj of orderedSubjects) {
+    for (const cls of Object.keys(groups[subj])) {
+      for (const e of groups[subj][cls]) {
+        if (!byStudent[e.name]) byStudent[e.name] = [];
+        byStudent[e.name].push({subject: subj, cls: cleanClassName(cls), score: e.score});
+      }
+    }
+  }
+
+  // Sort students by name, within each student sort by score ascending
+  const studentNames = Object.keys(byStudent).sort((a, b) => a.localeCompare(b, 'zh'));
+
+  for (const name of studentNames) {
+    const items = byStudent[name].sort((a, b) => a.score - b.score);
+    const groupStart = ws2.rowCount + 1;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const rowData = ["", it.subject, it.cls, it.score];
+      const r = ws2.addRow(rowData);
+      r.height = 25;
+      r.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
+      r.getCell(4).font = RED_FONT_M;
+    }
+    const groupEnd = ws2.rowCount;
+    if (groupEnd > groupStart) {
+      ws2.mergeCells(groupStart, 1, groupEnd, 1);
+    }
+    const nameCell = ws2.getRow(groupStart).getCell(1);
+    nameCell.value = name;
+    nameCell.font = {...FONT, bold:true};
+    nameCell.alignment = {vertical:V, horizontal:"center"};
+  }
+
+  // Full grid borders for sheet 2
+  const lastDataRow2 = ws2.rowCount;
+  for (let r = 2; r <= lastDataRow2; r++) {
+    const row = ws2.getRow(r);
+    for (let c = 1; c <= 4; c++) {
+      row.getCell(c).border = allBorder;
+    }
+  }
+
+  // Merge title row
+  ws2.mergeCells(1, 1, 1, 4);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = examLabel + "补考学生名单.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function dlHomework(students) {
+  const FONT = {name:"Arial", size:10};
+  const V = "middle";
+  const YELLOW_FILL = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF9E0'}};
+  const RED_FILL = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFC9C7'}};
+  const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("问题作业");
+  ws.views = [{showGridLines: false}];
+
+  // Title
+  const title = (students[0]?.className || "") + " 学生作业提交情况检查";
+  const r1 = ws.addRow([""]);
+  ws.mergeCells(1, 1, 1, 6);
+  r1.height = 60;
+  r1.getCell(1).value = {richText: [
+    {font: {name:"Arial", size:20, bold:true}, text: title + "\n"},
+    {font: {name:"Arial", size:12, color:{argb:'FF666666'}}, text: "作业分数低于50自动列为问题作业"}
+  ]};
+  r1.getCell(1).alignment = {vertical:V, horizontal:"center", wrapText:true};
+
+  // Header
+  const hr = ws.addRow(["序号","姓名","科目","任课老师","作业名称","得分"]);
+  hr.height = 24;
+  hr.eachCell(c => {
+    c.font = {...FONT, bold:true};
+    c.alignment = {vertical:V, horizontal:"center"};
+    c.fill = YELLOW_FILL;
+    c.border = allBorder;
+  });
+
+  // Collect all problem homework, sorted by problem count descending
+  const hwStudents = students.filter(s => s.hwProblems && s.hwProblems.length > 0)
+    .sort((a, b) => b.hwProblems.length - a.hwProblems.length);
+  let seq = 0;
+  for (const s of hwStudents) {
+    seq++;
+    // Sort by course so same courses are adjacent
+    const sorted = [...s.hwProblems].sort((a, b) => a.displayName < b.displayName ? -1 : a.displayName > b.displayName ? 1 : 0);
+    const startRow = ws.rowCount + 1;
+    for (let i = 0; i < sorted.length; i++) {
+      const hw = sorted[i];
+      const row = ws.addRow([
+        i === 0 ? seq : "",
+        i === 0 ? s.cnName : "",
+        hw.displayName,
+        hw.teacher,
+        hw.hwName,
+        hw.score
+      ]);
+      row.height = 24;
+      row.eachCell((c, ci) => {
+        c.font = FONT;
+        c.alignment = {vertical:V, horizontal:"center"};
+        c.border = allBorder;
+      });
+      row.getCell(6).fill = RED_FILL;
+      row.getCell(6).font = {...FONT, color:{argb:"FFCC0000"}};
+    }
+    const endRow = ws.rowCount;
+    // Merge 序号 and 姓名
+    if (sorted.length > 1) {
+      ws.mergeCells(startRow, 1, endRow, 1);
+      ws.mergeCells(startRow, 2, endRow, 2);
+    }
+    // Merge 科目 and 任课老师 columns for consecutive same-course rows
+    let cStart = startRow;
+    for (let r = startRow + 1; r <= endRow + 1; r++) {
+      const prev = r <= endRow ? ws.getCell(r, 3).value : null;
+      const cur = ws.getCell(cStart, 3).value;
+      if (r <= endRow && prev === cur) continue;
+      if (r - 1 > cStart) {
+        ws.mergeCells(cStart, 3, r - 1, 3);
+        ws.mergeCells(cStart, 4, r - 1, 4);
+      }
+      cStart = r;
+    }
+  }
+
+  // Column widths
+  ws.getColumn(1).width = 6.5;
+  ws.getColumn(2).width = 12;
+  ws.getColumn(3).width = 14;
+  ws.getColumn(4).width = 12;
+  ws.getColumn(5).width = 45;
+  ws.getColumn(6).width = 8;
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "学生问题作业检查.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function render(students, mainCols, extraCols) {
+  const res = document.getElementById("results");
+  const allCols = [...mainCols, ...extraCols];
+  let h = `<div class="topbar-count" style="font-size:15px;font-weight:500;margin-bottom:20px">共 ${students.length} 名学生 · ${allCols.length} 门科目</div>`;
+  h += `<div style="font-size:13px;color:#666;margin-bottom:10px">全班学生成绩分析：</div>`;
+  h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:24px">`;
+  h += `<button class="btn-dark" onclick="dlExcel(outputData.students, outputData.mainCols, outputData.extraCols)">下载月考统计</button>`;
+  h += `<button class="btn-dark" onclick="dlCompare(outputData.students, outputData.mainCols, outputData.extraCols)">下载月考/期中对比</button>`;
+  h += `<button class="btn-dark" onclick="dlMidFinal(outputData.students, outputData.mainCols, outputData.extraCols)">下载期中/期末对比</button>`;
+  h += `</div>`;
+  h += `<div style="font-size:13px;color:#666;margin-bottom:10px">全班学生个人成绩条：</div>`;
+  h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:24px">`;
+  h += `<button class="btn-dark" onclick="dlExcelIndiv(outputData.students, outputData.mainCols, outputData.extraCols)">下载月考单人成绩条</button>`;
+  h += `<button class="btn-dark" onclick="dlCompareIndiv(outputData.students, outputData.mainCols, outputData.extraCols)">下载月考/期中对比单人成绩条</button>`;
+  h += `<button class="btn-dark" onclick="dlMidFinalIndiv(outputData.students, outputData.mainCols, outputData.extraCols)">下载期中/期末对比单人成绩条</button>`;
+  h += `</div>`;
+  h += `<div style="font-size:13px;color:#666;margin-bottom:10px;margin-top:16px">下载班级补考名单：</div>`;
+  h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px">`;
+  h += `<button class="btn-dark" style="background:#8b0000" onclick="dlMakeup(outputData.students, outputData.mainCols, outputData.extraCols, 'mid')">期中补考名单</button>`;
+  h += `<button class="btn-dark" style="background:#8b0000" onclick="dlMakeup(outputData.students, outputData.mainCols, outputData.extraCols, 'final')">期末补考名单</button>`;
+  h += `</div>`;
+  h += `<div style="font-size:13px;color:#666;margin-bottom:10px;margin-top:16px">学生作业提交情况检查：</div>`;
+  h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px">`;
+  h += `<button class="btn-dark" style="background:#b8860b" onclick="dlHomework(outputData.students)">下载问题作业检查表</button>`;
+  h += `</div>`;
+  h += `<div style="font-size:13px;color:#666;margin-bottom:10px;margin-top:16px">美高项目专用扩展功能（含GPA）：</div>`;
+  h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">`;
+  h += `<button class="btn-dark" style="background:#2d5016" onclick="dlExcel(outputData.students, outputData.mainCols, outputData.extraCols, true)">月考统计 + GPA</button>`;
+  h += `<button class="btn-dark" style="background:#2d5016" onclick="dlCompare(outputData.students, outputData.mainCols, outputData.extraCols, true)">月考/期中对比 + GPA</button>`;
+  h += `<button class="btn-dark" style="background:#2d5016" onclick="dlMidFinal(outputData.students, outputData.mainCols, outputData.extraCols, true)">期中/期末对比 + GPA</button>`;
+  h += `</div>`;
+  h += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:24px">`;
+  h += `<button class="btn-dark" style="background:#2d5016" onclick="dlExcelIndiv(outputData.students, outputData.mainCols, outputData.extraCols, true)">月考成绩条 + GPA</button>`;
+  h += `<button class="btn-dark" style="background:#2d5016" onclick="dlCompareIndiv(outputData.students, outputData.mainCols, outputData.extraCols, true)">月考/期中成绩条 + GPA</button>`;
+  h += `<button class="btn-dark" style="background:#2d5016" onclick="dlMidFinalIndiv(outputData.students, outputData.mainCols, outputData.extraCols, true)">期中/期末成绩条 + GPA</button>`;
+  h += `</div>`;
+  h += `<div class="info">科目列：${allCols.join("、")}</div>`;
+  res.innerHTML = h;
+}
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("over"));
+dropZone.addEventListener("drop", e => { e.preventDefault(); dropZone.classList.remove("over"); handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  document.getElementById("errBox").style.display = "none";
+  document.getElementById("warnBox").style.display = "none";
+  document.getElementById("results").innerHTML = "";
+  document.getElementById("dropText").textContent = `已选择：${file.name}`;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const students = parseFile(new Uint8Array(e.target.result));
+      if (!students.length) {
+        document.getElementById("errBox").textContent = "未找到学生成绩数据。";
+        document.getElementById("errBox").style.display = "block";
+        return;
+      }
+      outputData = buildOutput(students);
+      render(outputData.students, outputData.mainCols, outputData.extraCols);
+    } catch(err) {
+      document.getElementById("errBox").textContent = `处理出错：${err.message}`;
+      document.getElementById("errBox").style.display = "block";
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+</script>
