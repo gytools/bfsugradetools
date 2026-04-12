@@ -103,7 +103,7 @@
   .preview-table .cell-type { color: #8f9faa; font-size: 11px; }
   .preview-table .cell-avg { font-weight: 500; color: #1a9be0; }
   .preview-table .cell-red { color: #c4554d; }
-  .preview-table .cell-orange { background: #fef5ea; }
+  .preview-table .cell-orange { background: #fef5ea !important; }
   .preview-table .cell-seq { color: #b4bfc8; font-size: 11px; }
 
   .stats-cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 20px; }
@@ -2118,10 +2118,13 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
     const semAvg = calcAvg(s, mainCols, c => c.semScore);
     const trend = (avg2 !== null && avg1 !== null) ? Math.round((avg2 - avg1) * 10) / 10 : null;
 
-    function scoreCell(col, scoreFn, isHighlight, isLight) {
+    function scoreCell(col, scoreFn, isHighlight, isLight, showAbsent) {
       const c = s.courses[col];
       const v = c ? scoreFn(c) : null;
-      if (c && typeof v !== "number") return `<td class="cell-orange"></td>`;
+      if (c && typeof v !== "number") {
+        if (showAbsent) return `<td style="color:#b0b8c4;font-size:11px">缺考</td>`;
+        return `<td class="cell-orange"></td>`;
+      }
       const lightStyle = isLight ? ' style="color:#b0b8c4"' : '';
       if (v !== null && v !== undefined) return `<td${isHighlight && v < 70 ? ' class="cell-red"' : lightStyle}>${v}</td>`;
       return `<td></td>`;
@@ -2132,22 +2135,22 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
     h += `<td class="cell-seq sticky-col sticky-seq" rowspan="3">${si + 1}</td>`;
     h += `<td class="cell-name sticky-col sticky-name" rowspan="3">${s.cnName}</td>`;
     h += `<td class="cell-type sticky-col sticky-type">${cfg.row1.label}</td>`;
-    for (const col of mainCols) h += scoreCell(col, cfg.row1.fn, false, true);
+    for (const col of mainCols) h += scoreCell(col, cfg.row1.fn, false, true, true);
     h += `<td class="cell-avg" style="color:#b0b8c4">${avg1 !== null ? avg1.toFixed(1) : ''}</td>`;
     h += `<td rowspan="3" style="font-weight:500;${trend !== null ? (trend >= 0 ? 'color:#3e7a60;background:#f0f8f2' : 'color:#c4554d;background:#fdf4f3') : ''}">${trend !== null ? (trend >= 0 ? '+' : '') + trend.toFixed(1) : ''}</td>`;
     if (withGPA) {
       const gpa = calcStudentGPA(s);
       h += `<td rowspan="3" style="font-weight:500;color:#3e7a60">${gpa !== null ? gpa.toFixed(2) : ''}</td>`;
     }
-    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row1.fn, false, true); }
+    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row1.fn, false, true, true); }
     h += `</tr>`;
 
     // Row 2
     h += `<tr class="row-sem">`;
     h += `<td class="cell-type sticky-col sticky-type">${cfg.row2.label}</td>`;
-    for (const col of mainCols) h += scoreCell(col, cfg.row2.fn, true, false);
+    for (const col of mainCols) h += scoreCell(col, cfg.row2.fn, true, false, false);
     h += `<td class="cell-avg">${avg2 !== null ? avg2.toFixed(1) : ''}</td>`;
-    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row2.fn, true, false); }
+    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row2.fn, true, false, false); }
     h += `</tr>`;
 
     // Row 3: 综合成绩
@@ -2524,7 +2527,13 @@ function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA) {
         if (cfg.lightCol !== null && j === cfg.lightCol) cls = ' class="sc-light"';
         if (isNum && v < 70 && j === cfg.highlightCol) cls = ' class="sc-red"';
         if (!isNum && course) {
-          h += `<td class="sc-orange"></td>`;
+          if (j === cfg.highlightCol) {
+            h += `<td class="sc-orange"></td>`;
+          } else if (cfg.lightCol !== null && j === cfg.lightCol) {
+            h += `<td style="color:#bbb;font-size:11px">缺考</td>`;
+          } else {
+            h += `<td></td>`;
+          }
         } else {
           h += `<td${cls}>${isNum ? v : ''}</td>`;
         }
