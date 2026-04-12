@@ -85,7 +85,7 @@
   .btn-dl { background: linear-gradient(135deg, #1a9be0, #1480c8); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; cursor: pointer; font-family: inherit; transition: all 0.2s; }
   .btn-dl:hover { opacity: 0.9; transform: translateY(-1px); }
 
-  .preview-table-wrap { background: #fff; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow-x: auto; }
+  .preview-table-wrap { background: #fff; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 180px); }
   .preview-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .preview-table th { background: #f0f4f7; color: #4a5868; font-weight: 500; padding: 10px 8px; text-align: center; border-bottom: 2px solid #e2e8ed; position: sticky; top: 0; z-index: 2; white-space: nowrap; }
   .preview-table td { padding: 8px 6px; text-align: center; border-bottom: 1px solid #f0f2f5; color: #4a5868; }
@@ -94,7 +94,7 @@
   .preview-table .sticky-seq { left: 0; }
   .preview-table .sticky-name { left: 40px; }
   .preview-table .sticky-type { left: 110px; }
-  .preview-table .student-first td { border-top: 1px solid #e2e8ed; }
+  .preview-table .student-first td { border-top: 2px solid #d6dee8; }
   .preview-table .row-test td { background: #fff; }
   .preview-table .row-sem td { background: #fafbfc; }
   .preview-table .row-test .sticky-col { background: #fff; }
@@ -110,11 +110,11 @@
   .stat-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
   .stat-card-title { font-size: 13px; font-weight: 500; color: #2d3436; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
   .stat-card-title .stat-dot { width: 8px; height: 8px; border-radius: 50%; }
-  .stat-row { display: grid; grid-template-columns: 1fr 50px 50px; align-items: center; padding: 4px 0; font-size: 12px; }
+  .stat-row { display: grid; grid-template-columns: 1fr 50px 50px; align-items: center; padding: 6px 0; font-size: 12px; border-bottom: 1px solid #f0f2f5; }
   .stat-label { color: #8f9faa; }
   .stat-value { font-weight: 500; color: #2d3436; text-align: right; }
   .stat-trend { text-align: right; font-size: 11px; }
-  .stat-header { display: grid; grid-template-columns: 1fr 50px 50px; padding: 0 0 6px; margin-bottom: 4px; border-bottom: 1px solid #f0f2f5; font-size: 10px; color: #b4bfc8; }
+  .stat-header { display: grid; grid-template-columns: 1fr 50px 50px; padding: 0 0 6px; margin-bottom: 4px; border-bottom: 2px solid #e2e8ed; font-size: 10px; color: #b4bfc8; }
   .stat-header span:nth-child(2), .stat-header span:nth-child(3) { text-align: right; }
 
   /* ── Individual Score Card Preview ── */
@@ -157,7 +157,7 @@
     <div>
       <div class="label">班主任工具</div>
       <h1>班级成绩分析工具</h1>
-      <p class="desc">上传从校宝导出的原始成绩文件（.xls / .xlsx），自动统计全班月考 / 期中 / 期末卷面成绩与学期成绩。</p>
+      <p class="desc">上传从校宝导出的原始成绩文件（.xls / .xlsx），自动统计全班月考 / 期中 / 期末卷面成绩与综合成绩。</p>
       <div class="hero-count" id="heroCount"></div>
     </div>
     <div>
@@ -263,15 +263,15 @@ function calcStudentGPA(student) {
 // Short display names for subjects
 const DISPLAY_MAP = {
   "AP微观经济":"AP微观经济","AP宏观经济":"AP宏观","AP宏观经济学":"AP宏观",
-  "AP计算机科学":"AP计算机","AP预备微积分":"AP Precal","AP微积分":"AP Calculus",
-  "AP统计":"AP Statistics","AP物理1":"AP物理","AP物理2":"AP物理2","AP物理C":"AP物理C",
+  "AP计算机科学":"AP计算机","AP预备微积分":"AP Precal","AP微积分":"AP Cal",
+  "AP统计":"AP统计","AP物理1":"AP物理","AP物理2":"AP物理2","AP物理C":"AP物理C",
   "AP化学":"AP化学","AP生物":"AP生物","AP心理学":"AP心理","AP研讨会":"AP Seminar",
   "AP 美术":"AP Art","AP美术":"AP Art",
   "英语听说":"听说LS","英语读写":"读写RW","英语听说4级":"听说LS","英语读写4级":"读写RW",
   "英语听说3级":"听说LS","英语读写3级":"读写RW","英语听说2级":"听说LS","英语读写2级":"读写RW",
   "英语听说1级":"听说LS","英语读写1级":"读写RW",
   "ESL 听说":"听说LS","ESL 读写":"读写RW",
-  "文学":"Literature","托福课程":"托福","文书写作":"文书写作","英美文学":"英美文学",
+  "文学":"文学","托福课程":"托福","文书写作":"文书写作","英美文学":"英美文学",
   "数学":"普通数学","物理":"普通物理","化学":"普通化学","生物一册":"生物","生物二册":"生物",
   "计算机":"计算机","美术":"美术","音乐":"音乐","体育":"体育",
   "语文一册":"语文","语文二册":"语文","法语":"小语种","西班牙语":"小语种","日语":"小语种",
@@ -866,7 +866,7 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false) {
       else if (c && c.testScore < 70) { cell.font = RED_FONT; }
     }
 
-    const semRow = [null, null, "学期成绩"];
+    const semRow = [null, null, "综合成绩"];
     for (const col of mainCols) { const c = s.courses[col]; semRow.push(c && c.semScore !== null ? c.semScore : null); }
     semRow.push(calcAvg(s, mainCols, c => c.semScore));
     if (withGPA) semRow.push(null);
@@ -1025,7 +1025,7 @@ async function dlCompare(students, mainCols, extraCols, withGPA = false) {
       else if (c && c.midScore < 70) { cell.font = RED_FONT; }
     }
 
-    const sr = ws.addRow(buildRow("学期成绩", c => c.semScore));
+    const sr = ws.addRow(buildRow("综合成绩", c => c.semScore));
     sr.height = 19;
     sr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
     sr.getCell(avgCol).numFmt = AVG_FMT;
@@ -1193,7 +1193,7 @@ async function dlMidFinal(students, mainCols, extraCols, withGPA = false) {
       else if (c && c.finalScore < 70) { cell.font = RED_FONT; }
     }
 
-    const sr = ws.addRow(buildRow("学期成绩", c => c.semScore));
+    const sr = ws.addRow(buildRow("综合成绩", c => c.semScore));
     sr.height = 19;
     sr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
     sr.getCell(avgCol).numFmt = AVG_FMT;
@@ -1990,9 +1990,9 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
     }
     h += `</tr>`;
 
-    // 学期成绩 row
+    // 综合成绩 row
     h += `<tr class="row-sem">`;
-    h += `<td class="cell-type sticky-col sticky-type">学期成绩</td>`;
+    h += `<td class="cell-type sticky-col sticky-type">综合成绩</td>`;
     for (const col of mainCols) {
       const c = s.courses[col];
       const v = c ? c.semScore : null;
@@ -2032,7 +2032,7 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
     const v = stats[col]?.avg;
     h += `<div class="stat-row"><span class="stat-label">${col}</span><span class="stat-value">${v !== null ? v : '-'}</span></div>`;
   }
-  h += `<div style="border-top:1px solid #f0f2f5;margin-top:8px;padding-top:8px"><div class="stat-row"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#1a9be0">${overallAvg !== null ? overallAvg : '-'}</span></div></div>`;
+  h += `<div style="border-top:2px solid #e2e8ed;margin-top:-1px;padding-top:8px"><div class="stat-row" style="border-bottom:none"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#1a9be0">${overallAvg !== null ? overallAvg : '-'}</span></div></div>`;
   h += `</div>`;
 
   // 及格率 card
@@ -2041,7 +2041,7 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
     const v = stats[col]?.pass;
     h += `<div class="stat-row"><span class="stat-label">${col}</span><span class="stat-value">${v !== null ? Math.round(v * 100) + '%' : '-'}</span></div>`;
   }
-  h += `<div style="border-top:1px solid #f0f2f5;margin-top:8px;padding-top:8px"><div class="stat-row"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#3e7a60">${overallPass !== null ? overallPass + '%' : '-'}</span></div></div>`;
+  h += `<div style="border-top:2px solid #e2e8ed;margin-top:-1px;padding-top:8px"><div class="stat-row" style="border-bottom:none"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#3e7a60">${overallPass !== null ? overallPass + '%' : '-'}</span></div></div>`;
   h += `</div>`;
 
   // 优秀率 card
@@ -2050,7 +2050,7 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
     const v = stats[col]?.excel;
     h += `<div class="stat-row"><span class="stat-label">${col}</span><span class="stat-value">${v !== null ? Math.round(v * 100) + '%' : '-'}</span></div>`;
   }
-  h += `<div style="border-top:1px solid #f0f2f5;margin-top:8px;padding-top:8px"><div class="stat-row"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#cb8a2e">${overallExcel !== null ? overallExcel + '%' : '-'}</span></div></div>`;
+  h += `<div style="border-top:2px solid #e2e8ed;margin-top:-1px;padding-top:8px"><div class="stat-row" style="border-bottom:none"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#cb8a2e">${overallExcel !== null ? overallExcel + '%' : '-'}</span></div></div>`;
   h += `</div>`;
 
   h += `</div>`;
@@ -2118,11 +2118,12 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
     const semAvg = calcAvg(s, mainCols, c => c.semScore);
     const trend = (avg2 !== null && avg1 !== null) ? Math.round((avg2 - avg1) * 10) / 10 : null;
 
-    function scoreCell(col, scoreFn, isHighlight) {
+    function scoreCell(col, scoreFn, isHighlight, isLight) {
       const c = s.courses[col];
       const v = c ? scoreFn(c) : null;
       if (c && typeof v !== "number") return `<td class="cell-orange"></td>`;
-      if (v !== null && v !== undefined) return `<td${v < 70 ? ' class="cell-red"' : ''}>${v}</td>`;
+      const lightStyle = isLight ? ' style="color:#b0b8c4"' : '';
+      if (v !== null && v !== undefined) return `<td${isHighlight && v < 70 ? ' class="cell-red"' : lightStyle}>${v}</td>`;
       return `<td></td>`;
     }
 
@@ -2131,27 +2132,27 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
     h += `<td class="cell-seq sticky-col sticky-seq" rowspan="3">${si + 1}</td>`;
     h += `<td class="cell-name sticky-col sticky-name" rowspan="3">${s.cnName}</td>`;
     h += `<td class="cell-type sticky-col sticky-type">${cfg.row1.label}</td>`;
-    for (const col of mainCols) h += scoreCell(col, cfg.row1.fn);
-    h += `<td class="cell-avg">${avg1 !== null ? avg1.toFixed(1) : ''}</td>`;
+    for (const col of mainCols) h += scoreCell(col, cfg.row1.fn, false, true);
+    h += `<td class="cell-avg" style="color:#b0b8c4">${avg1 !== null ? avg1.toFixed(1) : ''}</td>`;
     h += `<td rowspan="3" style="font-weight:500;${trend !== null ? (trend >= 0 ? 'color:#3e7a60;background:#f0f8f2' : 'color:#c4554d;background:#fdf4f3') : ''}">${trend !== null ? (trend >= 0 ? '+' : '') + trend.toFixed(1) : ''}</td>`;
     if (withGPA) {
       const gpa = calcStudentGPA(s);
       h += `<td rowspan="3" style="font-weight:500;color:#3e7a60">${gpa !== null ? gpa.toFixed(2) : ''}</td>`;
     }
-    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row1.fn); }
+    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row1.fn, false, true); }
     h += `</tr>`;
 
     // Row 2
     h += `<tr class="row-sem">`;
     h += `<td class="cell-type sticky-col sticky-type">${cfg.row2.label}</td>`;
-    for (const col of mainCols) h += scoreCell(col, cfg.row2.fn);
+    for (const col of mainCols) h += scoreCell(col, cfg.row2.fn, true, false);
     h += `<td class="cell-avg">${avg2 !== null ? avg2.toFixed(1) : ''}</td>`;
-    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row2.fn); }
+    if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row2.fn, true, false); }
     h += `</tr>`;
 
-    // Row 3: 学期成绩
+    // Row 3: 综合成绩
     h += `<tr class="row-sem">`;
-    h += `<td class="cell-type sticky-col sticky-type">学期成绩</td>`;
+    h += `<td class="cell-type sticky-col sticky-type">综合成绩</td>`;
     for (const col of mainCols) {
       const c = s.courses[col];
       const v = c ? c.semScore : null;
@@ -2191,10 +2192,16 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
 
   function trendHtml(newV, oldV, isPct) {
     if (newV === null || oldV === null || newV === undefined || oldV === undefined) return '<span class="stat-trend"></span>';
-    const diff = isPct ? Math.round((newV - oldV) * 100) : Math.round(newV - oldV);
+    if (oldV === 0) return '<span class="stat-trend"></span>';
+    let diff;
+    if (isPct) {
+      diff = Math.round((newV - oldV) / oldV * 100);
+    } else {
+      diff = Math.round((newV - oldV) / oldV * 100);
+    }
     const sign = diff >= 0 ? '+' : '';
     const color = diff >= 0 ? '#3e7a60' : '#c4554d';
-    return `<span class="stat-trend" style="color:${color}">${sign}${diff}${isPct ? '%' : ''}</span>`;
+    return `<span class="stat-trend" style="color:${color}">${sign}${diff}%</span>`;
   }
 
   h += `<div class="stats-cards">`;
@@ -2202,17 +2209,17 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
   h += `<div class="stat-card"><div class="stat-card-title"><span class="stat-dot" style="background:#1a9be0"></span>${examLabel}各科均分</div>`;
   h += `<div class="stat-header"><span></span><span>均分</span><span>趋势</span></div>`;
   for (const col of mainCols) { const v = stats2[col]?.avg; const o = stats1[col]?.avg; h += `<div class="stat-row"><span class="stat-label">${col}</span><span class="stat-value">${v !== null ? v : '-'}</span>${trendHtml(v, o, false)}</div>`; }
-  h += `<div style="border-top:1px solid #f0f2f5;margin-top:8px;padding-top:8px"><div class="stat-row"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#1a9be0">${overallAvg !== null ? overallAvg : '-'}</span>${trendHtml(overallAvg, overallAvg1, false)}</div></div></div>`;
+  h += `<div style="border-top:2px solid #e2e8ed;margin-top:-1px;padding-top:8px"><div class="stat-row" style="border-bottom:none"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#1a9be0">${overallAvg !== null ? overallAvg : '-'}</span>${trendHtml(overallAvg, overallAvg1, false)}</div></div></div>`;
 
   h += `<div class="stat-card"><div class="stat-card-title"><span class="stat-dot" style="background:#3e7a60"></span>${examLabel}各科及格率</div>`;
   h += `<div class="stat-header"><span></span><span>及格率</span><span>趋势</span></div>`;
   for (const col of mainCols) { const v = stats2[col]?.pass; const o = stats1[col]?.pass; h += `<div class="stat-row"><span class="stat-label">${col}</span><span class="stat-value">${v !== null ? Math.round(v*100)+'%' : '-'}</span>${trendHtml(v, o, true)}</div>`; }
-  h += `<div style="border-top:1px solid #f0f2f5;margin-top:8px;padding-top:8px"><div class="stat-row"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#3e7a60">${overallPass !== null ? overallPass+'%' : '-'}</span>${trendHtml(overallPass, overallPass1, false)}</div></div></div>`;
+  h += `<div style="border-top:2px solid #e2e8ed;margin-top:-1px;padding-top:8px"><div class="stat-row" style="border-bottom:none"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#3e7a60">${overallPass !== null ? overallPass+'%' : '-'}</span>${(overallPass !== null && overallPass1 !== null && overallPass1 !== 0) ? (() => { const d = Math.round((overallPass - overallPass1) / overallPass1 * 100); const s = d >= 0 ? '+' : ''; const c = d >= 0 ? '#3e7a60' : '#c4554d'; return '<span class="stat-trend" style="color:'+c+'">'+s+d+'%</span>'; })() : '<span class="stat-trend"></span>'}</div></div></div>`;
 
   h += `<div class="stat-card"><div class="stat-card-title"><span class="stat-dot" style="background:#cb8a2e"></span>${examLabel}各科优秀率</div>`;
   h += `<div class="stat-header"><span></span><span>优秀率</span><span>趋势</span></div>`;
   for (const col of mainCols) { const v = stats2[col]?.excel; const o = stats1[col]?.excel; h += `<div class="stat-row"><span class="stat-label">${col}</span><span class="stat-value">${v !== null ? Math.round(v*100)+'%' : '-'}</span>${trendHtml(v, o, true)}</div>`; }
-  h += `<div style="border-top:1px solid #f0f2f5;margin-top:8px;padding-top:8px"><div class="stat-row"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#cb8a2e">${overallExcel !== null ? overallExcel+'%' : '-'}</span>${trendHtml(overallExcel, overallExcel1, false)}</div></div></div>`;
+  h += `<div style="border-top:2px solid #e2e8ed;margin-top:-1px;padding-top:8px"><div class="stat-row" style="border-bottom:none"><span class="stat-label" style="font-weight:500">全科平均</span><span class="stat-value" style="color:#cb8a2e">${overallExcel !== null ? overallExcel+'%' : '-'}</span>${(overallExcel !== null && overallExcel1 !== null && overallExcel1 !== 0) ? (() => { const d = Math.round((overallExcel - overallExcel1) / overallExcel1 * 100); const s = d >= 0 ? '+' : ''; const c = d >= 0 ? '#3e7a60' : '#c4554d'; return '<span class="stat-trend" style="color:'+c+'">'+s+d+'%</span>'; })() : '<span class="stat-trend"></span>'}</div></div></div>`;
   h += `</div>`;
 
   res.innerHTML = h;
@@ -2367,7 +2374,7 @@ function previewHomework(students) {
   h += `</div>`;
 
   h += `<div class="preview-table-wrap"><table class="preview-table">`;
-  h += `<thead><tr><th style="width:40px">#</th><th style="min-width:70px;text-align:left;padding-left:14px">姓名</th><th>科目</th><th>任课老师</th><th style="min-width:180px">作业名称</th><th style="width:60px">得分</th></tr></thead><tbody>`;
+  h += `<thead><tr><th class="sticky-col sticky-seq" style="width:40px">#</th><th class="sticky-col sticky-name" style="min-width:70px;text-align:left;padding-left:14px">姓名</th><th>科目</th><th>任课老师</th><th style="min-width:180px">作业名称</th><th style="width:60px">得分</th></tr></thead><tbody>`;
 
   let seq = 0;
   for (const s of hwStudents) {
@@ -2389,13 +2396,14 @@ function previewHomework(students) {
     for (const group of courseGroups) {
       let firstInGroup = true;
       for (const hw of group.items) {
-        h += `<tr${firstRow ? ' class="student-first"' : ''}>`;
+        const borderTop = firstRow ? 'border-top:2px solid #d6dee8;' : '';
+        h += `<tr style="${borderTop}">`;
         if (firstRow) {
-          h += `<td class="cell-seq" rowspan="${sorted.length}">${seq}</td>`;
-          h += `<td class="cell-name" rowspan="${sorted.length}">${s.cnName}</td>`;
+          h += `<td class="cell-seq sticky-col sticky-seq" rowspan="${sorted.length}">${seq}</td>`;
+          h += `<td class="cell-name sticky-col sticky-name" rowspan="${sorted.length}">${s.cnName}</td>`;
         }
         if (firstInGroup) {
-          h += `<td rowspan="${group.items.length}" style="font-size:11.5px">${group.name}</td>`;
+          h += `<td rowspan="${group.items.length}" style="font-size:11.5px;border-left:1px solid #e8ecf0">${group.name}</td>`;
           h += `<td rowspan="${group.items.length}" style="font-size:11.5px;color:#8f9faa">${group.teacher}</td>`;
         }
         h += `<td style="text-align:left;padding-left:14px;font-size:11.5px">${hw.hwName}</td>`;
