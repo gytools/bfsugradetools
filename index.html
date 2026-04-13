@@ -67,8 +67,10 @@
   .btn-red:hover { background: #fae8e6; box-shadow: 0 3px 10px rgba(184,80,74,0.08); }
   .btn-amber { background: #fef8ef; color: #97692a; }
   .btn-amber:hover { background: #faefdb; box-shadow: 0 3px 10px rgba(151,105,42,0.08); }
-  .btn-green { background: #eef6f2; color: #3e7a60; }
-  .btn-green:hover { background: #e0ede6; box-shadow: 0 3px 10px rgba(62,122,96,0.08); }
+  .btn-green { background: #e0f0e8; color: #2d6b4a; }
+  .btn-green:hover { background: #d2e8da; box-shadow: 0 3px 10px rgba(45,107,74,0.1); }
+  .btn-blue { background: #e3eef8; color: #2c6090; }
+  .btn-blue:hover { background: #d4e4f2; box-shadow: 0 3px 10px rgba(44,96,144,0.1); }
 
   .sep { height: 1px; background: linear-gradient(90deg, transparent, #d6dee8, transparent); margin: 22px 0; }
 
@@ -774,7 +776,7 @@ function addStatsSection(ws, students, mainCols, extraCols, avgCol, spacerCol, c
   }
 }
 
-async function dlExcel(students, mainCols, extraCols, withGPA = false) {
+async function dlExcel(students, mainCols, extraCols, withGPA = false, noSem = false) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("月考成绩统计");
   const FONT = {name:"Arial", size:11};
@@ -794,7 +796,7 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false) {
   const sm = semStr.match(/第(\d)学期/);
   if (ym && sm) semPart = ym[1] + "学年第" + sm[1] + "学期";
 
-  const title = classShort + semPart + "月考成绩数据";
+  const title = classShort + semPart + "月考成绩数据" + (noSem ? "（不含综合成绩）" : "");
   const r1 = ws.addRow([title]);
   r1.height = 40;
   r1.getCell(1).font = {...FONT, bold:true, size:20};
@@ -835,6 +837,7 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false) {
     return (bb ?? -Infinity) - (aa ?? -Infinity);
   });
 
+  const rowsPerStudent = noSem ? 1 : 2;
   for (let si = 0; si < sorted.length; si++) {
     const s = sorted[si];
 
@@ -852,7 +855,6 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false) {
     tr.height = 19;
     tr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
     tr.getCell(avgCol).numFmt = AVG_FMT;
-    // Highlight: orange fill if course exists but no numeric test score; red font if < 70
     for (let i = 0; i < mainCols.length; i++) {
       const c = s.courses[mainCols[i]];
       const cell = tr.getCell(4 + i);
@@ -866,6 +868,7 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false) {
       else if (c && c.testScore < 70) { cell.font = RED_FONT; }
     }
 
+    if (!noSem) {
     const semRow = [null, null, "综合成绩"];
     for (const col of mainCols) { const c = s.courses[col]; semRow.push(c && c.semScore !== null ? c.semScore : null); }
     semRow.push(calcAvg(s, mainCols, c => c.semScore));
@@ -886,9 +889,13 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false) {
       const gpaCell = ws.getRow(rowNum).getCell(gpaCol);
       gpaCell.value = calcStudentGPA(s); gpaCell.numFmt = '0.00'; gpaCell.font = FONT; gpaCell.alignment = {vertical:V, horizontal:"center"};
     }
+    } else if (withGPA) {
+      const gpaCell = tr.getCell(gpaCol);
+      gpaCell.value = calcStudentGPA(s); gpaCell.numFmt = '0.00'; gpaCell.font = FONT; gpaCell.alignment = {vertical:V, horizontal:"center"};
+    }
   }
 
-  const lastRow = 2 + sorted.length * 2;
+  const lastRow = 2 + sorted.length * rowsPerStudent;
   const lastCol = spacerColX + extraCols.length;
   const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
   for (let r = 1; r <= lastRow; r++) {
@@ -912,7 +919,7 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false) {
   URL.revokeObjectURL(a.href);
 }
 
-async function dlCompare(students, mainCols, extraCols, withGPA = false) {
+async function dlCompare(students, mainCols, extraCols, withGPA = false, noSem = false) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("月考期中对比");
   const FONT = {name:"Arial", size:11};
@@ -1025,20 +1032,23 @@ async function dlCompare(students, mainCols, extraCols, withGPA = false) {
       else if (c && c.midScore < 70) { cell.font = RED_FONT; }
     }
 
+    if (!noSem) {
     const sr = ws.addRow(buildRow("综合成绩", c => c.semScore));
     sr.height = 19;
     sr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
     sr.getCell(avgCol).numFmt = AVG_FMT;
+    }
 
     // Trend: 期中均分 - 月考均分
     const midA = calcAvg(s, mainCols, c => c.midScore);
     const testA = calcAvg(s, mainCols, c => c.testScore);
     const trend = (midA !== null && testA !== null) ? Math.round((midA - testA) * 10) / 10 : null;
 
-    const rowNum = 3 + si * 3;
-    ws.mergeCells(rowNum, 1, rowNum + 2, 1);
-    ws.mergeCells(rowNum, 2, rowNum + 2, 2);
-    ws.mergeCells(rowNum, trendCol, rowNum + 2, trendCol);
+    const rps = noSem ? 2 : 3;
+    const rowNum = 3 + si * rps;
+    ws.mergeCells(rowNum, 1, rowNum + rps - 1, 1);
+    ws.mergeCells(rowNum, 2, rowNum + rps - 1, 2);
+    ws.mergeCells(rowNum, trendCol, rowNum + rps - 1, trendCol);
 
     const trendCell = ws.getRow(rowNum).getCell(trendCol);
     trendCell.value = trend;
@@ -1050,13 +1060,13 @@ async function dlCompare(students, mainCols, extraCols, withGPA = false) {
     }
 
     if (withGPA) {
-      ws.mergeCells(rowNum, gpaCol, rowNum + 2, gpaCol);
+      ws.mergeCells(rowNum, gpaCol, rowNum + rps - 1, gpaCol);
       const gc = ws.getRow(rowNum).getCell(gpaCol);
       gc.value = calcStudentGPA(s); gc.numFmt = '0.00'; gc.font = FONT; gc.alignment = {vertical:V, horizontal:"center"};
     }
   }
 
-  const lastRow = 2 + sorted.length * 3;
+  const lastRow = 2 + sorted.length * (noSem ? 2 : 3);
   const lastCol = spacerColX + extraCols.length;
   
   const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
@@ -1081,7 +1091,7 @@ async function dlCompare(students, mainCols, extraCols, withGPA = false) {
   URL.revokeObjectURL(a.href);
 }
 
-async function dlMidFinal(students, mainCols, extraCols, withGPA = false) {
+async function dlMidFinal(students, mainCols, extraCols, withGPA = false, noSem = false) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("期中期末对比");
   const FONT = {name:"Arial", size:11};
@@ -1193,20 +1203,23 @@ async function dlMidFinal(students, mainCols, extraCols, withGPA = false) {
       else if (c && c.finalScore < 70) { cell.font = RED_FONT; }
     }
 
+    if (!noSem) {
     const sr = ws.addRow(buildRow("综合成绩", c => c.semScore));
     sr.height = 19;
     sr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
     sr.getCell(avgCol).numFmt = AVG_FMT;
+    }
 
     // Trend: 期末均分 - 期中均分
     const finalA = calcAvg(s, mainCols, c => c.finalScore);
     const midA = calcAvg(s, mainCols, c => c.midScore);
     const trend = (finalA !== null && midA !== null) ? Math.round((finalA - midA) * 10) / 10 : null;
 
-    const rowNum = 3 + si * 3;
-    ws.mergeCells(rowNum, 1, rowNum + 2, 1);
-    ws.mergeCells(rowNum, 2, rowNum + 2, 2);
-    ws.mergeCells(rowNum, trendCol, rowNum + 2, trendCol);
+    const rps = noSem ? 2 : 3;
+    const rowNum = 3 + si * rps;
+    ws.mergeCells(rowNum, 1, rowNum + rps - 1, 1);
+    ws.mergeCells(rowNum, 2, rowNum + rps - 1, 2);
+    ws.mergeCells(rowNum, trendCol, rowNum + rps - 1, trendCol);
 
     const trendCell = ws.getRow(rowNum).getCell(trendCol);
     trendCell.value = trend;
@@ -1218,13 +1231,13 @@ async function dlMidFinal(students, mainCols, extraCols, withGPA = false) {
     }
 
     if (withGPA) {
-      ws.mergeCells(rowNum, gpaCol, rowNum + 2, gpaCol);
+      ws.mergeCells(rowNum, gpaCol, rowNum + rps - 1, gpaCol);
       const gc = ws.getRow(rowNum).getCell(gpaCol);
       gc.value = calcStudentGPA(s); gc.numFmt = '0.00'; gc.font = FONT; gc.alignment = {vertical:V, horizontal:"center"};
     }
   }
 
-  const lastRow = 2 + sorted.length * 3;
+  const lastRow = 2 + sorted.length * (noSem ? 2 : 3);
   const lastCol = spacerColX + extraCols.length;
   
   const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
@@ -1513,15 +1526,15 @@ function buildVerticalCards(wb, students, mainCols, extraCols, cfg, withGPA) {
   }
 }
 
-async function dlExcelIndiv(students, mainCols, extraCols, withGPA = false) {
+async function dlExcelIndiv(students, mainCols, extraCols, withGPA = false, noSem = false) {
   const wb = new ExcelJS.Workbook();
   buildVerticalCards(wb, students, mainCols, extraCols, {
     sheetName: "月考成绩条",
     titleLine2: "月考成绩",
-    scoreHeaders: ["月考", "综合成绩"],
-    getScores: c => [c.testScore, c.semScore],
-    getExtraScores: c => [c.testScore, c.semScore],
-    getAvgs: (s, mc) => [calcAvg(s, mc, c=>c.testScore), calcAvg(s, mc, c=>c.semScore)],
+    scoreHeaders: noSem ? ["月考"] : ["月考", "综合成绩"],
+    getScores: noSem ? (c => [c.testScore]) : (c => [c.testScore, c.semScore]),
+    getExtraScores: noSem ? (c => [c.testScore]) : (c => [c.testScore, c.semScore]),
+    getAvgs: noSem ? ((s, mc) => [calcAvg(s, mc, c=>c.testScore)]) : ((s, mc) => [calcAvg(s, mc, c=>c.testScore), calcAvg(s, mc, c=>c.semScore)]),
     lightCol: null,
     highlightCol: 0,
     getTrend: null,
@@ -1532,15 +1545,15 @@ async function dlExcelIndiv(students, mainCols, extraCols, withGPA = false) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "月考学生成绩条.xlsx"; a.click(); URL.revokeObjectURL(a.href);
 }
 
-async function dlCompareIndiv(students, mainCols, extraCols, withGPA = false) {
+async function dlCompareIndiv(students, mainCols, extraCols, withGPA = false, noSem = false) {
   const wb = new ExcelJS.Workbook();
   buildVerticalCards(wb, students, mainCols, extraCols, {
     sheetName: "月考期中成绩条",
     titleLine2: "月考/期中成绩对比",
-    scoreHeaders: ["月考", "期中", "综合成绩"],
-    getScores: c => [c.testScore, c.midScore, c.semScore],
-    getExtraScores: c => [c.testScore, c.midScore, c.semScore],
-    getAvgs: (s, mc) => [calcAvg(s, mc, c=>c.testScore), calcAvg(s, mc, c=>c.midScore), calcAvg(s, mc, c=>c.semScore)],
+    scoreHeaders: noSem ? ["月考", "期中"] : ["月考", "期中", "综合成绩"],
+    getScores: noSem ? (c => [c.testScore, c.midScore]) : (c => [c.testScore, c.midScore, c.semScore]),
+    getExtraScores: noSem ? (c => [c.testScore, c.midScore]) : (c => [c.testScore, c.midScore, c.semScore]),
+    getAvgs: noSem ? ((s, mc) => [calcAvg(s, mc, c=>c.testScore), calcAvg(s, mc, c=>c.midScore)]) : ((s, mc) => [calcAvg(s, mc, c=>c.testScore), calcAvg(s, mc, c=>c.midScore), calcAvg(s, mc, c=>c.semScore)]),
     lightCol: 0,
     highlightCol: 1,
     getTrend: (s, mc) => {
@@ -1554,15 +1567,15 @@ async function dlCompareIndiv(students, mainCols, extraCols, withGPA = false) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "月考期中学生成绩条.xlsx"; a.click(); URL.revokeObjectURL(a.href);
 }
 
-async function dlMidFinalIndiv(students, mainCols, extraCols, withGPA = false) {
+async function dlMidFinalIndiv(students, mainCols, extraCols, withGPA = false, noSem = false) {
   const wb = new ExcelJS.Workbook();
   buildVerticalCards(wb, students, mainCols, extraCols, {
     sheetName: "期中期末成绩条",
     titleLine2: "期中/期末成绩对比",
-    scoreHeaders: ["期中", "期末", "综合成绩"],
-    getScores: c => [c.midScore, c.finalScore, c.semScore],
-    getExtraScores: c => [c.midScore, c.finalScore, c.semScore],
-    getAvgs: (s, mc) => [calcAvg(s, mc, c=>c.midScore), calcAvg(s, mc, c=>c.finalScore), calcAvg(s, mc, c=>c.semScore)],
+    scoreHeaders: noSem ? ["期中", "期末"] : ["期中", "期末", "综合成绩"],
+    getScores: noSem ? (c => [c.midScore, c.finalScore]) : (c => [c.midScore, c.finalScore, c.semScore]),
+    getExtraScores: noSem ? (c => [c.midScore, c.finalScore]) : (c => [c.midScore, c.finalScore, c.semScore]),
+    getAvgs: noSem ? ((s, mc) => [calcAvg(s, mc, c=>c.midScore), calcAvg(s, mc, c=>c.finalScore)]) : ((s, mc) => [calcAvg(s, mc, c=>c.midScore), calcAvg(s, mc, c=>c.finalScore), calcAvg(s, mc, c=>c.semScore)]),
     lightCol: 0,
     highlightCol: 1,
     getTrend: (s, mc) => {
@@ -1916,7 +1929,7 @@ async function dlHomework(students) {
   URL.revokeObjectURL(a.href);
 }
 
-function previewExcel(students, mainCols, extraCols, withGPA) {
+function previewExcel(students, mainCols, extraCols, withGPA, noSem) {
   history.pushState({view:'preview'}, '');
   const res = document.getElementById("results");
   const allCols = [...mainCols, ...extraCols];
@@ -1937,10 +1950,10 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
   else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
 
   let h = `<div class="preview-bar">`;
-  h += `<div class="preview-title">${classShort} 月考成绩统计</div>`;
+  h += `<div class="preview-title">${classShort} 月考成绩统计${noSem ? '（不含综合成绩）' : ''}</div>`;
   h += `<div class="preview-actions">`;
   h += `<button class="btn-back" onclick="render(outputData.students, outputData.mainCols, outputData.extraCols)">← 返回</button>`;
-  h += `<button class="btn-dl" onclick="dlExcel(outputData.students, outputData.mainCols, outputData.extraCols, ${!!withGPA})">下载 Excel</button>`;
+  h += `<button class="btn-dl" onclick="dlExcel(outputData.students, outputData.mainCols, outputData.extraCols, ${!!withGPA}, ${!!noSem})">下载 Excel</button>`;
   h += `</div></div>`;
 
   // Table
@@ -1955,12 +1968,13 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
   for (let si = 0; si < sorted.length; si++) {
     const s = sorted[si];
     const testAvg = calcAvg(s, mainCols, scoreFn);
-    const semAvg = calcAvg(s, mainCols, c => c.semScore);
+    const semAvg = noSem ? null : calcAvg(s, mainCols, c => c.semScore);
+    const rspan = noSem ? '' : ' rowspan="2"';
 
     // 月考卷面 row
     h += `<tr class="row-test student-first">`;
-    h += `<td class="cell-seq sticky-col sticky-seq" rowspan="2">${si + 1}</td>`;
-    h += `<td class="cell-name sticky-col sticky-name" rowspan="2">${s.cnName}</td>`;
+    h += `<td class="cell-seq sticky-col sticky-seq"${rspan}>${si + 1}</td>`;
+    h += `<td class="cell-name sticky-col sticky-name"${rspan}>${s.cnName}</td>`;
     h += `<td class="cell-type sticky-col sticky-type">月考卷面</td>`;
     for (const col of mainCols) {
       const c = s.courses[col];
@@ -1974,10 +1988,9 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
     h += `<td class="cell-avg">${testAvg !== null ? testAvg.toFixed(1) : ''}</td>`;
     if (withGPA) {
       const gpa = calcStudentGPA(s);
-      h += `<td rowspan="2" style="font-weight:500;color:#3e7a60">${gpa !== null ? gpa.toFixed(2) : ''}</td>`;
+      h += `<td${rspan} style="font-weight:500;color:#3e7a60">${gpa !== null ? gpa.toFixed(2) : ''}</td>`;
     }
     if (extraCols.length) {
-      // spacer removed
       for (const col of extraCols) {
         const c = s.courses[col];
         const v = c ? c.testScore : null;
@@ -1990,7 +2003,8 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
     }
     h += `</tr>`;
 
-    // 综合成绩 row
+    // 综合成绩 row (skip if noSem)
+    if (!noSem) {
     h += `<tr class="row-sem">`;
     h += `<td class="cell-type sticky-col sticky-type">综合成绩</td>`;
     for (const col of mainCols) {
@@ -2000,7 +2014,6 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
     }
     h += `<td class="cell-avg">${semAvg !== null ? semAvg.toFixed(1) : ''}</td>`;
     if (extraCols.length) {
-      // spacer removed
       for (const col of extraCols) {
         const c = s.courses[col];
         const v = c ? c.semScore : null;
@@ -2008,6 +2021,7 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
       }
     }
     h += `</tr>`;
+    }
   }
   h += `</tbody></table></div>`;
 
@@ -2060,7 +2074,7 @@ function previewExcel(students, mainCols, extraCols, withGPA) {
   document.querySelector('.wrap').classList.add('preview-mode');
 }
 
-function previewCompare(students, mainCols, extraCols, mode, withGPA) {
+function previewCompare(students, mainCols, extraCols, mode, withGPA, noSem) {
   history.pushState({view:'preview'}, '');
   const res = document.getElementById("results");
   const allCols = [...mainCols, ...extraCols];
@@ -2095,10 +2109,10 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
   else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
 
   let h = `<div class="preview-bar">`;
-  h += `<div class="preview-title">${classShort} ${cfg.title}</div>`;
+  h += `<div class="preview-title">${classShort} ${cfg.title}${noSem ? '（不含综合成绩）' : ''}</div>`;
   h += `<div class="preview-actions">`;
   h += `<button class="btn-back" onclick="render(outputData.students, outputData.mainCols, outputData.extraCols)">← 返回</button>`;
-  h += `<button class="btn-dl" onclick="${cfg.dlFn}(outputData.students, outputData.mainCols, outputData.extraCols, ${!!withGPA})">下载 Excel</button>`;
+  h += `<button class="btn-dl" onclick="${cfg.dlFn}(outputData.students, outputData.mainCols, outputData.extraCols, ${!!withGPA}, ${!!noSem})">下载 Excel</button>`;
   h += `</div></div>`;
 
   // Table
@@ -2115,8 +2129,9 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
     const s = sorted[si];
     const avg1 = calcAvg(s, mainCols, cfg.row1.fn);
     const avg2 = calcAvg(s, mainCols, cfg.row2.fn);
-    const semAvg = calcAvg(s, mainCols, c => c.semScore);
+    const semAvg = noSem ? null : calcAvg(s, mainCols, c => c.semScore);
     const trend = (avg2 !== null && avg1 !== null) ? Math.round((avg2 - avg1) * 10) / 10 : null;
+    const rspan = noSem ? ' rowspan="2"' : ' rowspan="3"';
 
     function scoreCell(col, scoreFn, isHighlight, isLight, showAbsent) {
       const c = s.courses[col];
@@ -2132,15 +2147,15 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
 
     // Row 1
     h += `<tr class="row-test student-first">`;
-    h += `<td class="cell-seq sticky-col sticky-seq" rowspan="3">${si + 1}</td>`;
-    h += `<td class="cell-name sticky-col sticky-name" rowspan="3">${s.cnName}</td>`;
+    h += `<td class="cell-seq sticky-col sticky-seq"${rspan}>${si + 1}</td>`;
+    h += `<td class="cell-name sticky-col sticky-name"${rspan}>${s.cnName}</td>`;
     h += `<td class="cell-type sticky-col sticky-type">${cfg.row1.label}</td>`;
     for (const col of mainCols) h += scoreCell(col, cfg.row1.fn, false, true, true);
     h += `<td class="cell-avg" style="color:#b0b8c4">${avg1 !== null ? avg1.toFixed(1) : ''}</td>`;
-    h += `<td rowspan="3" style="font-weight:500;${trend !== null ? (trend >= 0 ? 'color:#3e7a60;background:#f0f8f2' : 'color:#c4554d;background:#fdf4f3') : ''}">${trend !== null ? (trend >= 0 ? '+' : '') + trend.toFixed(1) : ''}</td>`;
+    h += `<td${rspan} style="font-weight:500;${trend !== null ? (trend >= 0 ? 'color:#3e7a60;background:#f0f8f2' : 'color:#c4554d;background:#fdf4f3') : ''}">${trend !== null ? (trend >= 0 ? '+' : '') + trend.toFixed(1) : ''}</td>`;
     if (withGPA) {
       const gpa = calcStudentGPA(s);
-      h += `<td rowspan="3" style="font-weight:500;color:#3e7a60">${gpa !== null ? gpa.toFixed(2) : ''}</td>`;
+      h += `<td${rspan} style="font-weight:500;color:#3e7a60">${gpa !== null ? gpa.toFixed(2) : ''}</td>`;
     }
     if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row1.fn, false, true, true); }
     h += `</tr>`;
@@ -2153,7 +2168,8 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
     if (extraCols.length) { for (const col of extraCols) h += scoreCell(col, cfg.row2.fn, true, false, false); }
     h += `</tr>`;
 
-    // Row 3: 综合成绩
+    // Row 3: 综合成绩 (skip if noSem)
+    if (!noSem) {
     h += `<tr class="row-sem">`;
     h += `<td class="cell-type sticky-col sticky-type">综合成绩</td>`;
     for (const col of mainCols) {
@@ -2170,6 +2186,7 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA) {
       }
     }
     h += `</tr>`;
+    }
   }
   h += `</tbody></table></div>`;
 
@@ -2425,17 +2442,17 @@ function previewHomework(students) {
   document.querySelector('.wrap').classList.remove('preview-mode');
 }
 
-function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA) {
+function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA, noSem) {
   history.pushState({view:'preview'}, '');
   const res = document.getElementById("results");
   const cfgs = {
     test: {
       title: "月考成绩条",
       cardSub: "月考成绩",
-      scoreHeaders: ["月考","综合成绩"],
-      getScores: c => [c.testScore, c.semScore],
-      getExtraScores: c => [c.testScore, c.semScore],
-      getAvgs: (s,mc) => [calcAvg(s,mc,c=>c.testScore), calcAvg(s,mc,c=>c.semScore)],
+      scoreHeaders: noSem ? ["月考"] : ["月考","综合成绩"],
+      getScores: noSem ? (c => [c.testScore]) : (c => [c.testScore, c.semScore]),
+      getExtraScores: noSem ? (c => [c.testScore]) : (c => [c.testScore, c.semScore]),
+      getAvgs: noSem ? ((s,mc) => [calcAvg(s,mc,c=>c.testScore)]) : ((s,mc) => [calcAvg(s,mc,c=>c.testScore), calcAvg(s,mc,c=>c.semScore)]),
       lightCol: null, highlightCol: 0,
       getTrend: null,
       sortFn: (s,mc) => calcAvg(s,mc,c=>c.testScore),
@@ -2444,10 +2461,10 @@ function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA) {
     mid: {
       title: "月考/期中成绩条",
       cardSub: "月考/期中成绩对比",
-      scoreHeaders: ["月考","期中","综合成绩"],
-      getScores: c => [c.testScore, c.midScore, c.semScore],
-      getExtraScores: c => [c.testScore, c.midScore, c.semScore],
-      getAvgs: (s,mc) => [calcAvg(s,mc,c=>c.testScore), calcAvg(s,mc,c=>c.midScore), calcAvg(s,mc,c=>c.semScore)],
+      scoreHeaders: noSem ? ["月考","期中"] : ["月考","期中","综合成绩"],
+      getScores: noSem ? (c => [c.testScore, c.midScore]) : (c => [c.testScore, c.midScore, c.semScore]),
+      getExtraScores: noSem ? (c => [c.testScore, c.midScore]) : (c => [c.testScore, c.midScore, c.semScore]),
+      getAvgs: noSem ? ((s,mc) => [calcAvg(s,mc,c=>c.testScore), calcAvg(s,mc,c=>c.midScore)]) : ((s,mc) => [calcAvg(s,mc,c=>c.testScore), calcAvg(s,mc,c=>c.midScore), calcAvg(s,mc,c=>c.semScore)]),
       lightCol: 0, highlightCol: 1,
       getTrend: (s,mc) => { const m=calcAvg(s,mc,c=>c.midScore),t=calcAvg(s,mc,c=>c.testScore); return(m!==null&&t!==null)?Math.round((m-t)*10)/10:null; },
       sortFn: (s,mc) => calcAvg(s,mc,c=>c.midScore),
@@ -2456,10 +2473,10 @@ function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA) {
     final: {
       title: "期中/期末成绩条",
       cardSub: "期中/期末成绩对比",
-      scoreHeaders: ["期中","期末","综合成绩"],
-      getScores: c => [c.midScore, c.finalScore, c.semScore],
-      getExtraScores: c => [c.midScore, c.finalScore, c.semScore],
-      getAvgs: (s,mc) => [calcAvg(s,mc,c=>c.midScore), calcAvg(s,mc,c=>c.finalScore), calcAvg(s,mc,c=>c.semScore)],
+      scoreHeaders: noSem ? ["期中","期末"] : ["期中","期末","综合成绩"],
+      getScores: noSem ? (c => [c.midScore, c.finalScore]) : (c => [c.midScore, c.finalScore, c.semScore]),
+      getExtraScores: noSem ? (c => [c.midScore, c.finalScore]) : (c => [c.midScore, c.finalScore, c.semScore]),
+      getAvgs: noSem ? ((s,mc) => [calcAvg(s,mc,c=>c.midScore), calcAvg(s,mc,c=>c.finalScore)]) : ((s,mc) => [calcAvg(s,mc,c=>c.midScore), calcAvg(s,mc,c=>c.finalScore), calcAvg(s,mc,c=>c.semScore)]),
       lightCol: 0, highlightCol: 1,
       getTrend: (s,mc) => { const f=calcAvg(s,mc,c=>c.finalScore),m=calcAvg(s,mc,c=>c.midScore); return(f!==null&&m!==null)?Math.round((f-m)*10)/10:null; },
       sortFn: (s,mc) => calcAvg(s,mc,c=>c.finalScore),
@@ -2481,10 +2498,10 @@ function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA) {
   else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
 
   let h = `<div class="preview-bar">`;
-  h += `<div class="preview-title">${classShort} ${cfg.title}</div>`;
+  h += `<div class="preview-title">${classShort} ${cfg.title}${noSem ? '（不含综合成绩）' : ''}</div>`;
   h += `<div class="preview-actions">`;
   h += `<button class="btn-back" onclick="render(outputData.students, outputData.mainCols, outputData.extraCols)">← 返回</button>`;
-  h += `<button class="btn-dl" onclick="${cfg.dlFn}(outputData.students, outputData.mainCols, outputData.extraCols, ${!!withGPA})">下载 Excel</button>`;
+  h += `<button class="btn-dl" onclick="${cfg.dlFn}(outputData.students, outputData.mainCols, outputData.extraCols, ${!!withGPA}, ${!!noSem})">下载 Excel</button>`;
   h += `</div></div>`;
 
   h += `<div class="cards-grid">`;
@@ -2629,16 +2646,29 @@ function render(students, mainCols, extraCols) {
   h += `</div>`;
 
   h += `<div class="sep"></div>`;
-  h += `<div class="panel-sub">美高项目扩展（含GPA）</div>`;
+  h += `<div class="panel-sub">美高项目扩展功能（含GPA）</div>`;
   h += `<div class="btn-grid col3" style="margin-bottom:8px">`;
-  h += `<button class="btn btn-green" onclick="previewExcel(outputData.students, outputData.mainCols, outputData.extraCols, true)">月考</button>`;
-  h += `<button class="btn btn-green" onclick="previewCompare(outputData.students, outputData.mainCols, outputData.extraCols, 'mid', true)">月考/期中</button>`;
-  h += `<button class="btn btn-green" onclick="previewCompare(outputData.students, outputData.mainCols, outputData.extraCols, 'final', true)">期中/期末</button>`;
+  h += `<button class="btn btn-blue" onclick="previewExcel(outputData.students, outputData.mainCols, outputData.extraCols, true)">月考</button>`;
+  h += `<button class="btn btn-blue" onclick="previewCompare(outputData.students, outputData.mainCols, outputData.extraCols, 'mid', true)">月考/期中</button>`;
+  h += `<button class="btn btn-blue" onclick="previewCompare(outputData.students, outputData.mainCols, outputData.extraCols, 'final', true)">期中/期末</button>`;
   h += `</div>`;
   h += `<div class="btn-grid col3">`;
-  h += `<button class="btn btn-green" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'test', true)">月考成绩条</button>`;
-  h += `<button class="btn btn-green" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'mid', true)">月考/期中成绩条</button>`;
-  h += `<button class="btn btn-green" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'final', true)">期中/期末成绩条</button>`;
+  h += `<button class="btn btn-blue" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'test', true)">月考成绩条</button>`;
+  h += `<button class="btn btn-blue" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'mid', true)">月考/期中成绩条</button>`;
+  h += `<button class="btn btn-blue" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'final', true)">期中/期末成绩条</button>`;
+  h += `</div>`;
+
+  h += `<div class="sep"></div>`;
+  h += `<div class="panel-sub">加拿大项目扩展功能（不含综合成绩）</div>`;
+  h += `<div class="btn-grid col3" style="margin-bottom:8px">`;
+  h += `<button class="btn btn-green" onclick="previewExcel(outputData.students, outputData.mainCols, outputData.extraCols, false, true)">月考</button>`;
+  h += `<button class="btn btn-green" onclick="previewCompare(outputData.students, outputData.mainCols, outputData.extraCols, 'mid', false, true)">月考/期中</button>`;
+  h += `<button class="btn btn-green" onclick="previewCompare(outputData.students, outputData.mainCols, outputData.extraCols, 'final', false, true)">期中/期末</button>`;
+  h += `</div>`;
+  h += `<div class="btn-grid col3">`;
+  h += `<button class="btn btn-green" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'test', false, true)">月考成绩条</button>`;
+  h += `<button class="btn btn-green" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'mid', false, true)">月考/期中成绩条</button>`;
+  h += `<button class="btn btn-green" onclick="previewIndiv(outputData.students, outputData.mainCols, outputData.extraCols, 'final', false, true)">期中/期末成绩条</button>`;
   h += `</div>`;
 
   h += `</div>`;
