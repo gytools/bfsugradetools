@@ -1270,53 +1270,45 @@ const SCHOOL_LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAAEYAAABkCAIAAAC0KNHuAAABCGlDQ1B
 
 // ===== Vertical individual score card builder =====
 function buildVerticalCards(wb, students, mainCols, extraCols, cfg, withGPA) {
-  // cfg.sheetName, cfg.titleLine2, cfg.scoreHeaders ["月考","综合成绩"],
-  // cfg.getScores(course) => [v1,v2,...], cfg.getAvgs(student,mainCols) => [a1,a2,...],
-  // cfg.getExtraScores(course) => [v1,v2,...], cfg.lightCol (0-based index of gray score col, null for none),
-  // cfg.getTrend(student,mainCols) => number|null, cfg.sortFn(student,mainCols) => number,
-  // cfg.fileName
-
-  const BLUE = '2B4C7E';
+  const BLUE = '1B3A66';
   const V = 'middle';
+  const HEADER_BG = {type:'pattern', pattern:'solid', fgColor:{argb:'FF'+BLUE}};
+  const ZEBRA = {type:'pattern', pattern:'solid', fgColor:{argb:'FFF5F7FA'}};
+  const TH_BG = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEFF2F7'}};
+  const EXTRA_BG = {type:'pattern', pattern:'solid', fgColor:{argb:'FFF8F9FB'}};
+  const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
+  const TREND_GREEN_BG = {type:'pattern', pattern:'solid', fgColor:{argb:'FFEDF7F0'}};
+  const TREND_RED_BG = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFDF4F3'}};
+
+  const F_NAME = {name:'Microsoft YaHei', size:16, bold:true, color:{argb:'FFFFFFFF'}};
+  const F_SUB = {name:'Microsoft YaHei', size:10, color:{argb:'FF8FA8C8'}};
+  const F_TH = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF5A6B7F'}};
   const F = {name:'Microsoft YaHei', size:10, color:{argb:'FF333333'}};
-  const F_BOLD = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF333333'}};
-  const F_HEAD = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FFFFFFFF'}};
-  const F_GRAY9 = {name:'Microsoft YaHei', size:9, color:{argb:'FF999999'}};
-  const F_GRAY9B = {name:'Microsoft YaHei', size:9, bold:true, color:{argb:'FF999999'}};
-  const F_AVG = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF'+BLUE}};
-  const F_AVG_LIGHT = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF8FAABE'}};
   const F_LIGHT = {name:'Microsoft YaHei', size:10, color:{argb:'FF999999'}};
   const F_RED = {name:'Microsoft YaHei', size:10, color:{argb:'FFEE0000'}};
-  const F_GREEN_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF2E7D32'}};
-  const F_RED_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FFEE0000'}};
+  const F_AVG = {name:'Microsoft YaHei', size:11, bold:true, color:{argb:'FF'+BLUE}};
+  const F_AVG_LIGHT = {name:'Microsoft YaHei', size:11, bold:true, color:{argb:'FF8FAABE'}};
+  const F_GRAY9 = {name:'Microsoft YaHei', size:9, color:{argb:'FF999999'}};
+  const F_GRAY9B = {name:'Microsoft YaHei', size:9, bold:true, color:{argb:'FF999999'}};
   const F_BLUE_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF'+BLUE}};
+  const F_GREEN_B = {name:'Microsoft YaHei', size:12, bold:true, color:{argb:'FF2E7D32'}};
+  const F_RED_B = {name:'Microsoft YaHei', size:12, bold:true, color:{argb:'FFC4554D'}};
   const F_DARK_B = {name:'Microsoft YaHei', size:10, bold:true, color:{argb:'FF222222'}};
-  const HEADER_BG = {type:'pattern', pattern:'solid', fgColor:{argb:'FF'+BLUE}};
-  const ZEBRA = {type:'pattern', pattern:'solid', fgColor:{argb:'FFF4F6F9'}};
-  const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
   const MED = {style:'medium', color:{argb:'FF'+BLUE}};
-  const BLUE_TOP_B = {top:MED};
-  const AL_L1 = {horizontal:'left', vertical:V, indent:1};
+  const THIN_LINE = {style:'thin', color:{argb:'FFE8ECF0'}};
+  const TH_BOTTOM = {style:'thin', color:{argb:'FFD0D8E0'}};
+  const AVG_TOP_B = {top:MED};
+  const BODY_B = {bottom:THIN_LINE};
+  const AL_L = {horizontal:'left', vertical:V, indent:1};
   const AL_C = {horizontal:'center', vertical:V};
   const AL_R = {horizontal:'right', vertical:V};
 
   const nScores = cfg.scoreHeaders.length;
-  const subjCol = 4;
-  const firstSC = 5;
-  const lastSC = 4 + nScores;
-  const frameR = lastSC + 1;
-
-  // Parse class/semester info
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnM = cn.match(/（(.+?)）/);
-  if (cnM) classShort = cnM[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
-  let semPart = "";
-  const semStr = students[0]?.semester || "";
-  const ym = semStr.match(/(\d{4}-\d{4})学年/);
-  const sm = semStr.match(/第(\d)学期/);
-  if (ym && sm) semPart = ym[1]+"学年第"+sm[1]+"学期";
+  // Columns: A=margin, B=pad, C=subject, D..=scores, next=pad, next=margin
+  const subjCol = 3;
+  const firstSC = 4;
+  const lastSC = 3 + nScores;
+  const padCol = lastSC + 1;
 
   const sorted = [...students].sort((a,b) => {
     const aa = cfg.sortFn(a, mainCols);
@@ -1330,14 +1322,11 @@ function buildVerticalCards(wb, students, mainCols, extraCols, cfg, withGPA) {
     ws.views = [{showGridLines: false}];
 
     // Column widths
-    ws.getColumn(1).width = 8;
-    ws.getColumn(2).width = 3;
-    ws.getColumn(3).width = 1.2;
+    ws.getColumn(1).width = 8;   // left margin
+    ws.getColumn(2).width = 2;   // left pad
     ws.getColumn(subjCol).width = 18;
-    for (let c = firstSC; c <= lastSC; c++) ws.getColumn(c).width = 12;
-    ws.getColumn(frameR).width = 3;
-    ws.getColumn(frameR+1).width = 1.2;
-    ws.getColumn(frameR+2).width = 2;
+    for (let c = firstSC; c <= lastSC; c++) ws.getColumn(c).width = 13;
+    ws.getColumn(padCol).width = 2;  // right pad
 
     function addR(h) { const r = ws.addRow([]); r.height = h; return r; }
     function setCell(row, col, val, font, align, fill, border) {
@@ -1350,80 +1339,85 @@ function buildVerticalCards(wb, students, mainCols, extraCols, cfg, withGPA) {
       return c;
     }
 
-    // Row 1: outer top
-    addR(36);
-    // Row 2: frame top
+    // Row 1: top margin
+    addR(40);
+    let curRow = 1;
+
+    // === DEEP BLUE HEADER BLOCK ===
     const frameStart = 2;
-    addR(8);
-    // Row 3: inner spacer
-    addR(16);
-    // Row 4: semester
-    addR(20);
-    setCell(4, subjCol, semPart, {name:'Microsoft YaHei', size:12, color:{argb:'FF888888'}}, {vertical:V});
-    // Row 5: report type
-    addR(14);
-    setCell(5, subjCol, cfg.titleLine2, {name:'Microsoft YaHei', size:10, color:{argb:'FF888888'}}, {vertical:V});
-    // Row 6: spacer
-    addR(10);
-    // Row 7: student name
-    addR(32);
-    setCell(7, subjCol, s.cnName, {name:'Microsoft YaHei', size:14, bold:true, color:{argb:'FF'+BLUE}}, {vertical:V});
+    // Rows 2-6: blue header
+    for (let r = 2; r <= 6; r++) {
+      addR(r === 2 ? 30 : r === 3 ? 32 : r === 4 ? 20 : r === 5 ? 10 : 8);
+      for (let c = 2; c <= padCol; c++) setCell(r, c, null, null, null, HEADER_BG);
+    }
+    // Row 3: student name
+    setCell(3, subjCol, s.cnName, F_NAME, {horizontal:'left', vertical:V}, HEADER_BG);
+    // Row 4: subtitle
+    setCell(4, subjCol, cfg.titleLine2, F_SUB, {horizontal:'left', vertical:V}, HEADER_BG);
+    curRow = 6;
+
+    // Row 7: spacer
+    addR(8); curRow = 7;
     // Row 8: spacer
-    addR(4);
-    // Row 9: header
-    addR(30);
-    setCell(9, subjCol, "科目", F_HEAD, AL_L1, HEADER_BG);
+    addR(6); curRow = 8;
+
+    // === TABLE HEADER ===
+    addR(28); curRow = 9;
+    const thBorder = {bottom:TH_BOTTOM};
+    setCell(curRow, subjCol, "科目", F_TH, AL_L, TH_BG, thBorder);
     for (let i = 0; i < nScores; i++) {
-      setCell(9, firstSC+i, cfg.scoreHeaders[i], F_HEAD, AL_C, HEADER_BG);
+      setCell(curRow, firstSC+i, cfg.scoreHeaders[i], F_TH, AL_C, TH_BG, thBorder);
     }
 
-    // Filter to only subjects this student has scores for
+    // Filter subjects
     const stuMainCols = mainCols.filter(col => {
       const c = s.courses[col];
       if (!c) return false;
-      const scores = cfg.getScores(c);
-      return scores.some(v => v !== null && v !== undefined);
+      return cfg.getScores(c).some(v => v !== null && v !== undefined);
     });
     const stuExtraCols = extraCols.filter(col => {
       const c = s.courses[col];
       if (!c) return false;
-      const scores = cfg.getExtraScores(c);
-      return scores.some(v => v !== null && v !== undefined);
+      return cfg.getExtraScores(c).some(v => v !== null && v !== undefined);
     });
 
-    // Data rows starting at row 10
-    let curRow = 10;
+    // === SUBJECT ROWS ===
+    curRow = 10;
     for (let di = 0; di < stuMainCols.length; di++) {
       const col = stuMainCols[di];
       const course = s.courses[col];
       const scores = course ? cfg.getScores(course) : new Array(nScores).fill(null);
-      const r = addR(26);
-      const fill = di % 2 === 1 ? ZEBRA : undefined;
-      setCell(curRow, subjCol, col, F, AL_L1, fill);
+      addR(26);
+      const zebraFill = di % 2 === 1 ? ZEBRA : undefined;
+      setCell(curRow, subjCol, col, F, AL_L, zebraFill, BODY_B);
       for (let j = 0; j < nScores; j++) {
         const v = scores[j];
         const isNum = typeof v === 'number';
         let font = F;
         if (cfg.lightCol !== null && j === cfg.lightCol) font = F_LIGHT;
         if (isNum && v < 70 && j === cfg.highlightCol) font = F_RED;
-        if (!isNum && v !== null && v !== undefined && typeof v === 'string') {
-          setCell(curRow, firstSC+j, null, font, AL_C, ORANGE_FILL);
+        // Highlight logic: orange for unrecorded at highlightCol, 缺考 for lightCol
+        if (!isNum && course) {
+          if (j === cfg.highlightCol) {
+            setCell(curRow, firstSC+j, null, font, AL_C, ORANGE_FILL, BODY_B);
+          } else {
+            setCell(curRow, firstSC+j, null, font, AL_C, zebraFill, BODY_B);
+          }
         } else {
-          setCell(curRow, firstSC+j, isNum ? v : null, font, AL_C, fill);
-          if (!isNum && course) { setCell(curRow, firstSC+j, null, font, AL_C, ORANGE_FILL); }
+          setCell(curRow, firstSC+j, isNum ? v : null, font, AL_C, zebraFill, BODY_B);
         }
       }
       curRow++;
     }
 
-    // 均分 row
+    // === AVERAGE ROW ===
     const avgRow = curRow;
-    addR(26);
-    setCell(avgRow, subjCol, "均分", F_AVG, AL_L1, undefined, BLUE_TOP_B);
+    addR(30);
+    setCell(curRow, subjCol, "均分", F_AVG, AL_L, undefined, AVG_TOP_B);
     const avgs = cfg.getAvgs(s, stuMainCols);
     for (let j = 0; j < nScores; j++) {
       const font = (cfg.lightCol !== null && j === cfg.lightCol) ? F_AVG_LIGHT : F_AVG;
-      const c = setCell(avgRow, firstSC+j, avgs[j], font, AL_C, undefined, BLUE_TOP_B);
+      const c = setCell(curRow, firstSC+j, avgs[j], font, AL_C, undefined, AVG_TOP_B);
       c.numFmt = '0.0';
     }
     curRow++;
@@ -1431,74 +1425,71 @@ function buildVerticalCards(wb, students, mainCols, extraCols, cfg, withGPA) {
     // Spacer
     addR(10); curRow++;
 
-    // 音体美 (only if student has any)
+    // === 音体美 ===
     if (stuExtraCols.length > 0) {
-    addR(20);
-    setCell(curRow, subjCol, "音体美", F_GRAY9B, AL_L1);
-    curRow++;
-    for (let ei = 0; ei < stuExtraCols.length; ei++) {
-      const col = stuExtraCols[ei];
-      const course = s.courses[col];
-      const scores = course ? cfg.getExtraScores(course) : new Array(nScores).fill(null);
       addR(22);
-      setCell(curRow, subjCol, col, F_GRAY9, AL_L1);
-      for (let j = 0; j < nScores; j++) {
-        const v = scores[j];
-        setCell(curRow, firstSC+j, typeof v === 'number' ? v : null, F_GRAY9, AL_C);
-      }
+      setCell(curRow, subjCol, "音体美", F_GRAY9B, AL_L, EXTRA_BG);
+      for (let c = firstSC; c <= lastSC; c++) setCell(curRow, c, null, null, null, EXTRA_BG);
       curRow++;
-    }
+      for (let ei = 0; ei < stuExtraCols.length; ei++) {
+        const col = stuExtraCols[ei];
+        const course = s.courses[col];
+        const scores = course ? cfg.getExtraScores(course) : new Array(nScores).fill(null);
+        addR(24);
+        setCell(curRow, subjCol, col, F_GRAY9, AL_L, undefined, BODY_B);
+        for (let j = 0; j < nScores; j++) {
+          const v = scores[j];
+          const c = setCell(curRow, firstSC+j, typeof v === 'number' ? v : null, F_GRAY9, AL_C, undefined, BODY_B);
+          if (j === nScores - 1 && typeof v === 'number') c.numFmt = '0.0';
+        }
+        curRow++;
+      }
     }
 
     // Spacer
-    addR(10); curRow++;
+    addR(12); curRow++;
 
-    // Trend row (only for compare versions)
+    // === TREND ROW ===
     const hasTrend = cfg.getTrend !== null;
     if (hasTrend) {
-      addR(26);
+      addR(28);
       setCell(curRow, lastSC-1, "均分趋势", F_BLUE_B, AL_R);
       const trend = cfg.getTrend(s, stuMainCols);
-      const tStr = trend !== null ? (trend >= 0 ? "+"+trend.toFixed(1) : trend.toFixed(1)) : null;
-      const tc = setCell(curRow, lastSC, trend, trend !== null && trend >= 0 ? F_GREEN_B : F_RED_B, AL_C);
-      if (trend !== null) tc.numFmt = '+0.0;-0.0;0.0';
+      if (trend !== null) {
+        const tc = setCell(curRow, lastSC, trend, trend >= 0 ? F_GREEN_B : F_RED_B, AL_C);
+        tc.numFmt = '+0.0;-0.0;0.0';
+      }
       curRow++;
     }
 
-    // GPA row
+    // === GPA ROW ===
     if (withGPA) {
       addR(hasTrend ? 16 : 20);
-      const gpaLabelCol = hasTrend ? lastSC-1 : lastSC-1;
-      const gpaValCol = hasTrend ? lastSC : lastSC;
-      const AL_RT = {horizontal:'right', vertical:'top'};
-      const AL_CT = {horizontal:'center', vertical:'top'};
-      setCell(curRow, gpaLabelCol, "GPA", F_BLUE_B, AL_RT);
+      setCell(curRow, lastSC-1, "GPA", F_BLUE_B, AL_R);
       const gpa = calcStudentGPA(s);
-      const c = setCell(curRow, gpaValCol, gpa, F_DARK_B, AL_CT);
+      const c = setCell(curRow, lastSC, gpa, {...F_DARK_B, size:11}, AL_C);
       c.numFmt = '0.00';
       curRow++;
     }
 
     // Bottom spacer
     const frameEnd = curRow;
-    addR(16); curRow++;
-    // Outer bottom
-    addR(8);
+    addR(10); curRow++;
 
-    // Frame borders
+    // === FRAME BORDER ===
     for (let r = frameStart; r <= frameEnd; r++) {
       ws.getRow(r).getCell(2).border = {
         left: MED,
         top: r === frameStart ? MED : undefined,
         bottom: r === frameEnd ? MED : undefined,
       };
-      ws.getRow(r).getCell(frameR+1).border = {
+      ws.getRow(r).getCell(padCol).border = {
         right: MED,
         top: r === frameStart ? MED : undefined,
         bottom: r === frameEnd ? MED : undefined,
       };
       if (r === frameStart || r === frameEnd) {
-        for (let c = 3; c <= frameR; c++) {
+        for (let c = 3; c < padCol; c++) {
           const existing = ws.getRow(r).getCell(c).border || {};
           ws.getRow(r).getCell(c).border = {
             ...existing,
@@ -1509,20 +1500,10 @@ function buildVerticalCards(wb, students, mainCols, extraCols, cfg, withGPA) {
       }
     }
 
-    // Re-apply avg row blue top (frame pass may overwrite)
+    // Re-apply avg row blue top (frame border pass may overwrite)
     for (let c = subjCol; c <= lastSC; c++) {
-      ws.getRow(avgRow).getCell(c).border = BLUE_TOP_B;
+      ws.getRow(avgRow).getCell(c).border = AVG_TOP_B;
     }
-
-    // Add school logo (right-aligned in last score column, top-aligned with semester row)
-    const logoId = wb.addImage({base64: SCHOOL_LOGO_B64, extension: 'png'});
-    // Merge last score column rows 4-5 for logo area
-    ws.mergeCells(4, lastSC, 5, lastSC);
-    // Position: 0-based col = lastSC-1, offset 483000 EMU (~51px) to right-align 35px logo in ~86px column
-    ws.addImage(logoId, {
-      tl: {nativeCol: lastSC - 1, nativeColOff: 483000, nativeRow: 3, nativeRowOff: 0},
-      ext: {width: 35, height: 50}
-    });
   }
 }
 
