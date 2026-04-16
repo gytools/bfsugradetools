@@ -2614,7 +2614,7 @@ function previewTranscript(students) {
     h += `<div class="score-card-body"><table class="score-card-table">`;
     h += `<thead><tr><th>Course</th><th style="width:50px">Score</th><th style="width:50px">Grade</th><th style="width:50px">GPA</th><th style="width:40px">Cr</th></tr></thead><tbody>`;
     for (const r of t.rows) {
-      const colorStyle = r.highlight ? 'color:#c62828' : (r.isAP ? 'color:#2B4C7E;font-weight:500' : '');
+      const colorStyle = r.isAP ? 'color:#2B4C7E;font-weight:500' : '';
       const bgStyle = r.cr === 0 ? 'background:#fffbe6' : '';
       h += `<tr style="${bgStyle}">`;
       h += `<td style="${colorStyle}">${r.engName}</td>`;
