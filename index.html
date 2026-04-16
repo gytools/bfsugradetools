@@ -44,6 +44,7 @@
   .panel::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 18px 18px 0 0; }
   .panel.panel-exam::before { background: linear-gradient(90deg, #6aa8c7, #8dbdd8); }
   .panel.panel-daily::before { background: linear-gradient(90deg, #e8b960, #f0d48a); }
+  .panel.panel-transcript::before { background: linear-gradient(90deg, #a0413d, #c26561); }
 
   .panel-title { font-size: 16px; font-weight: 600; color: #2d3436; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
   .panel-icon { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
@@ -2423,6 +2424,292 @@ function previewHomework(students) {
   document.querySelector('.wrap').classList.remove('preview-mode');
 }
 
+// ─────────────── 美高学期GPA成绩单 ───────────────
+const TRANSCRIPT_MAP = {
+  "英语听说":"_ENG","英语读写":"_ENG","写作":"_ENG",
+  "英语听说4级":"_ENG","英语读写4级":"_ENG",
+  "英语听说3级":"_ENG","英语读写3级":"_ENG",
+  "英语听说2级":"_ENG","英语读写2级":"_ENG",
+  "英语听说1级":"_ENG","英语读写1级":"_ENG",
+  "ESL 听说":"_ENG","ESL 读写":"_ENG","文学":"_ENG",
+  "托福课程":"_ENG","文书写作":"_ENG","英美文学":"_ENG",
+  "语文一册":"_CHN","语文二册":"_CHN",
+  "数学":"Algebra II","物理":"Physics","化学":"Chemistry",
+  "生物二册":"Biology 9","生物一册":"Biology",
+  "计算机":"Computer Science","中国历史":"Chinese History",
+  "法语":"French","西班牙语":"Spanish","日语":"Japanese",
+  "美术":"Art","音乐":"Music","体育":"Physical Education",
+  "AP预备微积分":"AP Pre-calculus","AP微积分":"AP Calculus",
+  "AP统计":"AP Statistics","AP物理1":"AP Physics 1","AP物理2":"AP Physics 2",
+  "AP物理C":"AP Physics C","AP化学":"AP Chemistry","AP生物":"AP Biology",
+  "美国历史":"American History","世界历史":"World History",
+  "经济学":"Economics","AP计算机科学":"AP Computer Science",
+  "AP微观经济":"AP Microeconomics","AP宏观经济":"AP Macroeconomics","AP宏观经济学":"AP Macroeconomics",
+  "AP心理学":"AP Psychology","AP研讨会":"AP Seminar",
+  "知识论TOK":"Theory of Knowledge",
+  "AP 美术":"AP Art","AP美术":"AP Art","戏剧":"Drama","Capstone":"Capstone",
+};
+const TRANSCRIPT_EXCLUDE = new Set(["选修","STEAM课程"]);
+const TRANSCRIPT_HIGHLIGHT = new Set(["AP Art","French","Spanish","AP Physics C"]);
+const TRANSCRIPT_ORDER = {
+  "English 8":9,"English 9":10,"English 10":11,"English 11":12,"English 12":13,
+  "Geometry":20,"Algebra II":21,"AP Pre-calculus":22,"AP Calculus":23,"AP Statistics":24,
+  "AP Physics 1":30,"AP Physics 2":31,"AP Physics C":32,"Physics":33,
+  "AP Chemistry":34,"Chemistry":35,"AP Biology":36,"Biology":37,"Biology 9":38,
+  "AP Computer Science":40,"Computer Science":41,"AP Microeconomics":42,"AP Macroeconomics":43,
+  "Economics":44,"American History":45,"World History":46,"Chinese History":47,
+  "AP Psychology":48,"AP Seminar":49,"Theory of Knowledge":50,
+  "French":60,"Spanish":61,"Japanese":62,
+  "Chinese 8":64,"Chinese 9":65,"Chinese 10":66,"Chinese 11":67,"Chinese 12":68,
+  "AP Art":70,"Art":71,"Music":72,"Drama":73,
+  "Physical Education":80,"Capstone":90,
+};
+const TRANSCRIPT_REG = [
+  [97,100,"A+",4.33,0.5],[93,96,"A",4,0.5],[90,92,"A-",3.67,0.5],
+  [87,89,"B+",3.33,0.5],[83,86,"B",3,0.5],[80,82,"B-",2.67,0.5],
+  [77,79,"C+",2.33,0.5],[73,76,"C",2,0.5],[70,72,"C-",1.67,0.5],
+  [67,69,"D+",1.33,0],[63,66,"D",1,0],[60,62,"D-",0.67,0],[0,59,"F",0,0]
+];
+const TRANSCRIPT_APT = [
+  [97,100,"A+",5,0.5],[93,96,"A",4.67,0.5],[90,92,"A-",4.33,0.5],
+  [87,89,"B+",4,0.5],[83,86,"B",3.67,0.5],[80,82,"B-",3.33,0.5],
+  [77,79,"C+",3,0.5],[73,76,"C",2.67,0.5],[70,72,"C-",2.33,0.5],
+  [67,69,"D+",2,0],[63,66,"D",1.67,0],[60,62,"D-",1.33,0],[0,59,"F",0,0]
+];
+function transcriptLookup(score, isAP) {
+  const r = Math.round(score), t = isAP ? TRANSCRIPT_APT : TRANSCRIPT_REG;
+  for (const [lo,hi,g,gpa,cr] of t) if (r>=lo&&r<=hi) return {grade:g,gpa,cr};
+  return {grade:"F",gpa:0,cr:0};
+}
+
+function buildTranscriptData(students) {
+  // Extract grade & semester label from first student's semester string
+  let schoolYear = "2025-2026", semNum = "1", gradeNum = "10";
+  for (const s of students) {
+    if (s.semester) {
+      const ym = s.semester.match(/(\d{4}-\d{4})学年/);
+      if (ym) schoolYear = ym[1];
+      const sm = s.semester.match(/第(\d)学期/);
+      if (sm) semNum = sm[1];
+    }
+    if (s.className) {
+      const gm = s.className.match(/(\d{1,2})年级\d+班/);
+      if (gm) { gradeNum = gm[1]; break; }
+    }
+  }
+  const ordinal = {8:"8th",9:"9th",10:"10th",11:"11th",12:"12th"}[gradeNum] || gradeNum+"th";
+  const semLabel = `${ordinal}, ${schoolYear}  Sem ${semNum}`;
+
+  const out = [];
+  const unmapped = new Set();
+
+  for (const s of students) {
+    const engScores = [];
+    const engDetails = [];
+    const chnScores = [];
+    const standalone = [];
+
+    for (const displayName of Object.keys(s.courses)) {
+      const c = s.courses[displayName];
+      const courseCN = c.courseCN || displayName;
+      if (TRANSCRIPT_EXCLUDE.has(courseCN)) continue;
+      const semScore = c.semScore;
+      if (semScore === null || semScore === undefined || typeof semScore !== "number") continue;
+
+      const en = TRANSCRIPT_MAP[courseCN];
+      if (!en) {
+        standalone.push({engName: courseCN, score: semScore});
+        unmapped.add(courseCN);
+        continue;
+      }
+      if (en === "_ENG") {
+        engScores.push(semScore);
+        engDetails.push({name: courseCN, score: semScore});
+      } else if (en === "_CHN") {
+        chnScores.push(semScore);
+      } else {
+        standalone.push({engName: en, score: semScore});
+      }
+    }
+
+    const final = [];
+    if (engScores.length > 0) {
+      const avg = engScores.reduce((a,b)=>a+b,0) / engScores.length;
+      const detail = engDetails.map(d => `${d.name} ${d.score}`).join(" / ");
+      final.push({engName:`English ${gradeNum}`, score: Math.round(avg*10)/10, engDetail: detail});
+    }
+    if (chnScores.length > 0) {
+      const avg = chnScores.reduce((a,b)=>a+b,0) / chnScores.length;
+      final.push({engName:`Chinese ${gradeNum}`, score: Math.round(avg*10)/10});
+    }
+    for (const c of standalone) final.push(c);
+
+    final.sort((a,b) => {
+      const oa = TRANSCRIPT_ORDER[a.engName] ?? 95;
+      const ob = TRANSCRIPT_ORDER[b.engName] ?? 95;
+      return oa - ob;
+    });
+
+    const rows = final.map(c => {
+      const isAP = c.engName.startsWith("AP ");
+      const {grade, gpa, cr} = transcriptLookup(c.score, isAP);
+      const highlight = TRANSCRIPT_HIGHLIGHT.has(c.engName);
+      return {...c, isAP, grade, gpa, cr, w: gpa*cr, highlight};
+    });
+
+    const tCr = rows.reduce((s,r)=>s+r.cr, 0);
+    const tW = rows.reduce((s,r)=>s+r.w, 0);
+    out.push({
+      fullName: s.fullName,
+      cnName: s.cnName,
+      engName: s.engName,
+      semLabel,
+      rows, tCr, tW,
+      gpa: tCr > 0 ? tW/tCr : 0,
+    });
+  }
+  return {transcripts: out, unmapped: [...unmapped]};
+}
+
+function previewTranscript(students) {
+  history.pushState({view:'preview'}, '');
+  const res = document.getElementById("results");
+  const {transcripts, unmapped} = buildTranscriptData(students);
+
+  // Sort by GPA descending
+  transcripts.sort((a,b) => b.gpa - a.gpa);
+
+  let classShort = "";
+  const cn = students[0]?.className || "";
+  const cnM = cn.match(/（(.+?)）/);
+  if (cnM) classShort = cnM[1] + "班";
+  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
+
+  let h = `<div class="preview-bar">`;
+  h += `<div class="preview-title">${classShort} 本学期GPA成绩单</div>`;
+  h += `<div class="preview-actions">`;
+  h += `<button class="btn-back" onclick="render(outputData.students, outputData.mainCols, outputData.extraCols)">← 返回</button>`;
+  h += `<button class="btn-dl" onclick="dlTranscript(outputData.students)">下载 Excel</button>`;
+  h += `</div></div>`;
+
+  if (unmapped.length) {
+    h += `<div style="background:#fffde7;border:1px solid #fff9c4;border-radius:8px;padding:12px 16px;font-size:12px;color:#8a6d1f;margin-bottom:20px">注意：以下课程未找到对应英文名，将以原中文名显示：${unmapped.join("、")}</div>`;
+  }
+
+  if (transcripts.length === 0) {
+    h += `<div style="text-align:center;padding:60px 0;color:#8f9faa;font-size:14px">没有可用的学期综合成绩数据</div>`;
+    res.innerHTML = h;
+    return;
+  }
+
+  h += `<div class="cards-grid">`;
+
+  for (const t of transcripts) {
+    h += `<div class="score-card">`;
+    h += `<div class="score-card-header">`;
+    h += `<div class="score-card-name">${t.cnName}<span style="font-size:12px;font-weight:400;color:rgba(255,255,255,0.6);margin-left:8px">${t.engName || ''}</span></div>`;
+    h += `<div class="score-card-sub">${t.semLabel}</div>`;
+    h += `</div>`;
+
+    h += `<div class="score-card-body"><table class="score-card-table">`;
+    h += `<thead><tr><th>Course</th><th style="width:50px">Score</th><th style="width:50px">Grade</th><th style="width:50px">GPA</th><th style="width:40px">Cr</th></tr></thead><tbody>`;
+    for (const r of t.rows) {
+      const colorStyle = r.highlight ? 'color:#c62828' : (r.isAP ? 'color:#2B4C7E;font-weight:500' : '');
+      const bgStyle = r.cr === 0 ? 'background:#fffbe6' : '';
+      h += `<tr style="${bgStyle}">`;
+      h += `<td style="${colorStyle}">${r.engName}</td>`;
+      h += `<td>${r.score}</td>`;
+      h += `<td>${r.grade}</td>`;
+      h += `<td>${r.gpa.toFixed(2)}</td>`;
+      h += `<td>${r.cr.toFixed(2)}</td>`;
+      h += `</tr>`;
+    }
+    h += `<tr class="sc-avg"><td>Semester GPA</td><td></td><td></td><td>${t.gpa.toFixed(2)}</td><td>${t.tCr.toFixed(2)}</td></tr>`;
+    h += `</tbody></table></div>`;
+
+    h += `<div class="score-card-footer">`;
+    h += `<span class="score-card-gpa">GPA ${t.gpa.toFixed(2)}</span>`;
+    h += `</div>`;
+    h += `</div>`; // end score-card
+  }
+  h += `</div>`;
+
+  res.innerHTML = h;
+  window.scrollTo({top: document.querySelector('.wrap').offsetTop, behavior: 'smooth'});
+  document.querySelector('.wrap').classList.remove('preview-mode');
+}
+
+async function dlTranscript(students) {
+  const {transcripts} = buildTranscriptData(students);
+  if (transcripts.length === 0) { alert("没有可用的学期综合成绩数据"); return; }
+
+  const FONT = {name:"Arial", size:10};
+  const BORDER_TB = {top:{style:"thin"},bottom:{style:"thin"}};
+  const NUM2 = '0.00';
+  const V = "middle";
+
+  const wb = new ExcelJS.Workbook();
+  for (const t of transcripts) {
+    const sheetName = (t.cnName || "Sheet").slice(0,31);
+    const ws = wb.addWorksheet(sheetName);
+    ws.columns = [{width:4},{width:30},{width:4},{width:10},{width:7},{width:9},{width:6},{width:40}];
+
+    ws.addRow([]);
+    const r2 = ws.addRow(["", t.fullName]);
+    r2.getCell(2).font = {...FONT, bold:true};
+    r2.getCell(2).alignment = {vertical:V};
+    ws.addRow([]);
+
+    const r4 = ws.addRow(["", t.semLabel, "", "Grade", "", "GPA", "Cr"]);
+    ws.mergeCells(4, 4, 4, 5);
+    for (let ci = 2; ci <= 7; ci++) {
+      const cell = r4.getCell(ci);
+      cell.font = {...FONT, bold:true};
+      cell.border = BORDER_TB;
+      cell.alignment = {vertical:V};
+    }
+    r4.getCell(4).alignment = {horizontal:"center", vertical:V};
+    r4.getCell(6).alignment = {horizontal:"center", vertical:V};
+    r4.getCell(7).alignment = {horizontal:"center", vertical:V};
+
+    for (const r of t.rows) {
+      const row = ws.addRow(["", r.engName, "", r.score, r.grade, r.gpa, r.cr]);
+      const f = r.highlight ? {...FONT, color:{argb:"FFFF0000"}} : FONT;
+      row.eachCell(c => { c.font = f; c.alignment = {vertical:V}; });
+      if (r.cr === 0) {
+        const yFill = {type:"pattern", pattern:"solid", fgColor:{argb:"FFFFFF00"}};
+        for (let ci = 2; ci <= 7; ci++) row.getCell(ci).fill = yFill;
+      }
+      row.getCell(5).alignment = {horizontal:"left", indent:1, vertical:V};
+      row.getCell(6).alignment = {horizontal:"center", vertical:V};
+      row.getCell(6).numFmt = NUM2;
+      row.getCell(7).alignment = {horizontal:"center", vertical:V};
+      row.getCell(7).numFmt = NUM2;
+      if (r.engDetail) {
+        row.getCell(8).value = r.engDetail;
+        row.getCell(8).font = {...FONT, color:{argb:"FF888888"}};
+        row.getCell(8).alignment = {vertical:V};
+      }
+    }
+
+    const sub = ws.addRow(["", "Subtotal", "", "", "", Math.round(t.gpa*1000000)/1000000, t.tCr]);
+    sub.eachCell(c => { c.font = FONT; c.alignment = {vertical:V}; });
+    sub.getCell(6).alignment = {horizontal:"center", vertical:V};
+    sub.getCell(6).numFmt = NUM2;
+    sub.getCell(7).alignment = {horizontal:"center", vertical:V};
+    sub.getCell(7).numFmt = NUM2;
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "本学期GPA成绩单.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+// ─────────────── 美高学期GPA成绩单 END ───────────────
+
 function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA, noSem) {
   history.pushState({view:'preview'}, '');
   const res = document.getElementById("results");
@@ -2654,7 +2941,10 @@ function render(students, mainCols, extraCols) {
 
   h += `</div>`;
 
-  // ── 右面板：日常成绩相关 ──
+  // ── 右栏：包含日常成绩相关 + 成绩单相关 两个卡片 ──
+  h += `<div style="display:flex;flex-direction:column;gap:22px">`;
+
+  // 日常成绩相关
   h += `<div class="panel panel-daily">`;
   h += `<div class="panel-title"><span class="panel-icon amber">📋</span>日常成绩相关</div>`;
   h += `<div class="panel-desc">作业提交与日常表现追踪</div>`;
@@ -2665,6 +2955,20 @@ function render(students, mainCols, extraCols) {
   h += `</div>`;
 
   h += `</div>`;
+
+  // 成绩单相关
+  h += `<div class="panel panel-transcript">`;
+  h += `<div class="panel-title"><span class="panel-icon">📄</span>成绩单相关</div>`;
+  h += `<div class="panel-desc">学期综合成绩与GPA成绩单导出</div>`;
+
+  h += `<div class="panel-sub">美高学期GPA成绩单</div>`;
+  h += `<div class="btn-grid col1">`;
+  h += `<button class="btn btn-blue" onclick="previewTranscript(outputData.students)">本学期GPA成绩单</button>`;
+  h += `</div>`;
+
+  h += `</div>`;
+
+  h += `</div>`; // end 右栏容器
 
   h += `</div>`; // end dashboard
 
