@@ -1838,6 +1838,8 @@ async function dlUnified(students, mainCols, extraCols) {
           const t = (a !== null && b !== null) ? Math.round((b - a) * 10) / 10 : null;
           const tc = r.getCell(trendCol);
           tc.value = t; tc.numFmt = '0.0';
+          tc.font = FONT;
+          tc.alignment = {vertical:V, horizontal:"center"};
           if (t !== null) tc.fill = t >= 0 ? GREEN_FILL : RED_FILL;
         }
       }
@@ -1933,6 +1935,28 @@ function addUnifiedStats(ws, students, mainCols, extraCols, avgCol, spacerCol, s
     for (let i = 0; i < extraCols.length; i++) r.getCell(spacerCol + 1 + i).numFmt = fmt;
     for (let c = 3; c <= avgCol; c++) r.getCell(c).border = allBorder;
     for (let i = 0; i < extraCols.length; i++) r.getCell(spacerCol + 1 + i).border = allBorder;
+    return r;
+  }
+
+  // 学科趋势行：相邻两场卷面之间。均分=相对变化百分比，及格率/优秀率=百分点差值。
+  const PURPLE_FILL = {type:'pattern',pattern:'solid',fgColor:{argb:'FFF2C7FF'}};
+  const STAT_GREEN = {type:'pattern',pattern:'solid',fgColor:{argb:'FF92D050'}};
+  const STAT_RED = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFC9C7'}};
+  const paperSel2 = sel.filter(d => d.key !== 'sem');
+  const paperPairs = [];
+  for (let i = 1; i < paperSel2.length; i++) paperPairs.push([sel.indexOf(paperSel2[i - 1]), sel.indexOf(paperSel2[i])]);
+  const trendOf = (m, i, j, col) => {
+    const a = statsPerExam[i][col]?.[m], b = statsPerExam[j][col]?.[m];
+    if (typeof a !== "number" || typeof b !== "number") return null;
+    if (m === "avg") return a !== 0 ? Math.round((b - a) / a * 100) / 100 : null;
+    return Math.round((b - a) * 100) / 100;
+  };
+  function paintTrendRow(r) {
+    r.getCell(3).fill = PURPLE_FILL;
+    const paint = cell => { if (typeof cell.value === "number") cell.fill = cell.value >= 0 ? STAT_GREEN : STAT_RED; };
+    for (let i = 0; i < mainCols.length; i++) paint(r.getCell(4 + i));
+    paint(r.getCell(avgCol));
+    for (let i = 0; i < extraCols.length; i++) paint(r.getCell(spacerCol + 1 + i));
   }
 
   const groups = [
@@ -1944,6 +1968,23 @@ function addUnifiedStats(ws, students, mainCols, extraCols, avgCol, spacerCol, s
     sel.forEach((d, di) => {
       addStatRow(d.label + g.name, col => statsPerExam[di][col]?.[g.metric] ?? null, g.fmt);
     });
+    for (const [i, j] of paperPairs) {
+      const label = paperPairs.length > 1 ? `趋势 ${sel[i].label}→${sel[j].label}` : "趋势";
+      const r = addStatRow(label, col => trendOf(g.metric, i, j, col), '0%');
+      // 平均列：全科口径同一公式覆盖
+      const avgAll = idx => {
+        const vs = mainCols.map(c => statsPerExam[idx][c]?.[g.metric]).filter(v => typeof v === "number");
+        return vs.length ? vs.reduce((a,b)=>a+b,0) / vs.length : null;
+      };
+      const aAll = avgAll(i), bAll = avgAll(j);
+      let tAll = null;
+      if (aAll !== null && bAll !== null) tAll = g.metric === "avg" ? (aAll !== 0 ? Math.round((bAll - aAll) / aAll * 100) / 100 : null) : Math.round((bAll - aAll) * 100) / 100;
+      const ac = r.getCell(avgCol);
+      ac.value = tAll; ac.numFmt = '0%';
+      ac.font = FONT;
+      ac.alignment = {vertical:"middle", horizontal:"center"};
+      paintTrendRow(r);
+    }
   }
 }
 
@@ -3491,6 +3532,20 @@ function buildUnifiedStatsHTML(students, mainCols, sel) {
   h += `<th style="text-align:left;padding-left:14px;min-width:120px">统计</th>`;
   for (const col of mainCols) h += `<th>${DISPLAY_MAP[col] || col}</th>`;
   h += `<th style="background:#dceef8;color:#1a9be0">平均</th></tr></thead><tbody>`;
+  // 学科趋势：相邻两场卷面考试之间逐科对比。均分=相对变化百分比，及格率/优秀率=百分点差值。
+  const paperSel2 = sel.filter(d => d.key !== 'sem');
+  const paperPairs = [];
+  for (let i = 1; i < paperSel2.length; i++) paperPairs.push([sel.indexOf(paperSel2[i - 1]), sel.indexOf(paperSel2[i])]);
+  const trendOf = (m, i, j, col) => {
+    const a = per[i][col]?.[m], b = per[j][col]?.[m];
+    if (typeof a !== 'number' || typeof b !== 'number') return null;
+    if (m === 'avg') return a !== 0 ? (b - a) / a : null;
+    return b - a;
+  };
+  const trendCellHtml = v => v !== null
+    ? `<td style="font-weight:500;${v >= 0 ? 'color:#3e7a60;background:#f0f8f2' : 'color:#c4554d;background:#fdf4f3'}">${(v >= 0 ? '+' : '') + Math.round(v * 100) + '%'}</td>`
+    : `<td></td>`;
+
   const groups = [
     { name: '均分',   metric: 'avg',   fmt: v => Math.round(v) },
     { name: '及格率', metric: 'pass',  fmt: v => Math.round(v * 100) + '%' },
@@ -3505,6 +3560,20 @@ function buildUnifiedStatsHTML(students, mainCols, sel) {
       for (const v of vals) h += `<td>${typeof v === 'number' ? g.fmt(v) : ''}</td>`;
       h += `<td class="cell-avg">${a !== null ? g.fmt(a) : ''}</td></tr>`;
     });
+    for (const [i, j] of paperPairs) {
+      const label = paperPairs.length > 1 ? `趋势 ${sel[i].label}→${sel[j].label}` : '趋势';
+      const vals = mainCols.map(c => trendOf(g.metric, i, j, c));
+      const nums = vals.filter(v => typeof v === 'number');
+      // 平均列：全科口径下同一公式
+      const aAll = avgOf(mainCols.map(c => per[i][c]?.[g.metric] ?? null));
+      const bAll = avgOf(mainCols.map(c => per[j][c]?.[g.metric] ?? null));
+      let tAll = null;
+      if (aAll !== null && bAll !== null) tAll = g.metric === 'avg' ? (aAll !== 0 ? (bAll - aAll) / aAll : null) : bAll - aAll;
+      h += `<tr><td style="text-align:left;padding-left:14px;font-weight:600;background:#faf0fd;color:#8a4ba0">${label}</td>`;
+      for (const v of vals) h += trendCellHtml(v);
+      h += trendCellHtml(tAll);
+      h += `</tr>`;
+    }
   }
   h += `</tbody></table></div>`;
   return h;
