@@ -225,6 +225,21 @@
 </div>
 
 <script>
+// 从校宝班级全名提取简称：（10D）→10D班；X年级X班；否则剥掉年份/季节/校区前缀保留"××班"（如 25 金盏预备2班 → 预备2班）
+const CAMPUS_TOKENS = ["金盏", "北外", "同文"];
+function shortClassName(cn) {
+  cn = String(cn || "");
+  const m = cn.match(/（(.+?)）/);
+  if (m) return m[1] + "班";
+  const gm = cn.match(/(\d+)年级(\d+)班/);
+  if (gm) return gm[1] + "年级" + gm[2] + "班";
+  let rest = cn.replace(/^\d{2}(春|秋)?\s*/, "");
+  for (const t of CAMPUS_TOKENS) rest = rest.split(t).join("");
+  rest = rest.trim();
+  if (/班$/.test(rest) && rest.length >= 2) return rest;
+  return "";
+}
+
 const RENAME = {
   "英语听说4级":"听说","英语听说3级":"听说","英语听说2级":"听说","英语听说1级":"听说","英语听说":"听说","ESL 听说":"听说",
   "英语读写4级":"读写","英语读写3级":"读写","英语读写2级":"读写","英语读写1级":"读写","英语读写":"读写","ESL 读写":"读写",
@@ -358,6 +373,18 @@ function parseFile(data) {
         for (let ci = 1; ci < row.length; ci++) {
           const cell = String(row[ci] || "");
           if (cell.match(/\d{1,2}年级\d+班/)) { className = cell; break; }
+        }
+        if (!className) {
+          // 兜底：非"X年级X班"命名的行政班（如 25 金盏预备2班）。
+          // 行政班挂在大多数课程列下、教学班只出现一两次，取出现次数最多的班名。
+          const freq = {};
+          for (let ci = 1; ci < row.length; ci++) {
+            const cell = String(row[ci] || "").trim();
+            if (cell) freq[cell] = (freq[cell] || 0) + 1;
+          }
+          let best = "", bestN = 0;
+          for (const k of Object.keys(freq)) if (freq[k] > bestN) { best = k; bestN = freq[k]; }
+          if (bestN >= 2) className = best;
         }
       }
     }
@@ -907,11 +934,7 @@ async function dlExcel(students, mainCols, extraCols, withGPA = false, noSem = f
   const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
   const RED_FONT = {...FONT, color:{argb:'FFFF0000'}};
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnMatch = cn.match(/（(.+?)）/);
-  if (cnMatch) classShort = cnMatch[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  const classShort = shortClassName(students[0]?.className);
   let semPart = "";
   const semStr = students[0]?.semester || "";
   const ym = semStr.match(/(\d{4}-\d{4})学年/);
@@ -1053,11 +1076,7 @@ async function dlCompare(students, mainCols, extraCols, withGPA = false, noSem =
   const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
   const RED_FONT = {...FONT, color:{argb:'FFFF0000'}};
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnMatch = cn.match(/（(.+?)）/);
-  if (cnMatch) classShort = cnMatch[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  const classShort = shortClassName(students[0]?.className);
   let semPart = "";
   const semStr = students[0]?.semester || "";
   const ym = semStr.match(/(\d{4}-\d{4})学年/);
@@ -1225,11 +1244,7 @@ async function dlMidFinal(students, mainCols, extraCols, withGPA = false, noSem 
   const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
   const RED_FONT = {...FONT, color:{argb:'FFFF0000'}};
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnMatch = cn.match(/（(.+?)）/);
-  if (cnMatch) classShort = cnMatch[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  const classShort = shortClassName(students[0]?.className);
   let semPart = "";
   const semStr = students[0]?.semester || "";
   const ym = semStr.match(/(\d{4}-\d{4})学年/);
@@ -1720,11 +1735,7 @@ async function dlUnified(students, mainCols, extraCols) {
   const ORANGE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFCE4C8'}};
   const RED_FONT = {...FONT, color:{argb:'FFFF0000'}};
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnMatch = cn.match(/（(.+?)）/);
-  if (cnMatch) classShort = cnMatch[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  const classShort = shortClassName(students[0]?.className);
   let semPart = "";
   const semStr = students[0]?.semester || "";
   const ym = semStr.match(/(\d{4}-\d{4})学年/);
@@ -2040,11 +2051,7 @@ async function dlMakeup(students, mainCols, extraCols, examType) {
   const BLUE_FILL = {type:'pattern', pattern:'solid', fgColor:{argb:'FFDCE6F1'}};
   const allBorder = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnMatch = cn.match(/（(.+?)）/);
-  if (cnMatch) classShort = cnMatch[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  const classShort = shortClassName(students[0]?.className);
   let semPart = "";
   const semStr = students[0]?.semester || "";
   const ym = semStr.match(/(\d{4}-\d{4})学年/);
@@ -2339,11 +2346,7 @@ function previewExcel(students, mainCols, extraCols, withGPA, noSem) {
   });
 
   // Build title
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnMatch = cn.match(/（(.+?)）/);
-  if (cnMatch) classShort = cnMatch[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  const classShort = shortClassName(students[0]?.className);
 
   let h = `<div class="preview-bar">`;
   h += `<div class="preview-title">${classShort} 月考成绩统计${noSem ? '（不含综合成绩）' : ''}</div>`;
@@ -2498,11 +2501,7 @@ function previewCompare(students, mainCols, extraCols, mode, withGPA, noSem) {
     return (bb ?? -Infinity) - (aa ?? -Infinity);
   });
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnMatch = cn.match(/（(.+?)）/);
-  if (cnMatch) classShort = cnMatch[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1] + "年级" + gm[2] + "班"; }
+  const classShort = shortClassName(students[0]?.className);
 
   let h = `<div class="preview-bar">`;
   h += `<div class="preview-title">${classShort} ${cfg.title}${noSem ? '（不含综合成绩）' : ''}</div>`;
@@ -2651,11 +2650,7 @@ function previewMakeup(students, mainCols, extraCols, examType) {
   const groups = buildMakeupData(students, scoreFn);
   const examLabel = isMid ? "期中" : "期末";
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnM = cn.match(/（(.+?)）/);
-  if (cnM) classShort = cnM[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
+  const classShort = shortClassName(students[0]?.className);
 
   let h = `<div class="preview-bar">`;
   h += `<div class="preview-title">${classShort} ${examLabel}建议补考名单</div>`;
@@ -2768,11 +2763,7 @@ function previewHomework(students) {
   const hwStudents = students.filter(s => s.hwProblems && s.hwProblems.length > 0)
     .sort((a, b) => b.hwProblems.length - a.hwProblems.length);
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnM = cn.match(/（(.+?)）/);
-  if (cnM) classShort = cnM[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
+  const classShort = shortClassName(students[0]?.className);
 
   let h = `<div class="preview-bar">`;
   h += `<div class="preview-title">${classShort} 问题作业清单</div>`;
@@ -2997,11 +2988,7 @@ function previewTranscript(students) {
   // Sort by GPA descending
   transcripts.sort((a,b) => b.gpa - a.gpa);
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnM = cn.match(/（(.+?)）/);
-  if (cnM) classShort = cnM[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
+  const classShort = shortClassName(students[0]?.className);
 
   let h = `<div class="preview-bar">`;
   h += `<div class="preview-title">${classShort} 本学期GPA成绩单</div>`;
@@ -3177,11 +3164,7 @@ function previewIndiv(students, mainCols, extraCols, cfgKey, withGPA, noSem) {
     return (bb ?? -Infinity) - (aa ?? -Infinity);
   });
 
-  let classShort = "";
-  const cn = students[0]?.className || "";
-  const cnM = cn.match(/（(.+?)）/);
-  if (cnM) classShort = cnM[1] + "班";
-  else { const gm = cn.match(/(\d+)年级(\d+)班/); if (gm) classShort = gm[1]+"年级"+gm[2]+"班"; }
+  const classShort = shortClassName(students[0]?.className);
 
   let h = `<div class="preview-bar">`;
   h += `<div class="preview-title">${classShort} ${cfg.title}${noSem ? '（不含综合成绩）' : ''}</div>`;
@@ -3342,11 +3325,7 @@ function unifiedDlInfo() {
 }
 
 function unifiedClassShort(students) {
-  const cn = students[0]?.className || '';
-  const m = cn.match(/（(.+?)）/);
-  if (m) return m[1] + '班';
-  const gm = cn.match(/(\d+)年级(\d+)班/);
-  return gm ? gm[1] + '年级' + gm[2] + '班' : '';
+  return shortClassName(students[0]?.className);
 }
 
 function drawUnified() {
