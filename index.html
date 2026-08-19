@@ -209,6 +209,14 @@
   .jw-drop { border: 1.5px dashed #e3c987; background: #fffaec; border-radius: 10px; padding: 30px 18px; text-align: center; color: #8a6d1f; font-size: 12.5px; cursor: pointer; transition: all .2s; line-height: 1.8; }
   .jw-drop b { font-weight: 700; }
   .jw-drop:hover, .jw-drop.over { border-color: #d4a83c; background: #fff4d6; }
+  .jw-eg-toggle { text-align: center; font-size: 11.5px; color: #9ba5ad; margin-top: 8px; cursor: pointer; user-select: none; }
+  .jw-eg-toggle span { color: #1a9be0; }
+  .jw-eg-toggle:hover span { text-decoration: underline; }
+  .jw-eg { background: #f8fafc; border: 1px solid #edf1f5; border-radius: 10px; padding: 12px 12px 10px; margin-top: 8px; }
+  .jw-eg-title { font-size: 11.5px; color: #6a7885; line-height: 1.7; margin-bottom: 8px; }
+  .jw-eg-title b { color: #1a9be0; }
+  .jw-eg-row { background: #fff; pointer-events: none; }
+  .jw-eg-note { font-size: 11px; color: #9ba5ad; margin-top: 8px; line-height: 1.6; }
   .jw-file { display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1px solid #edf1f5; border-radius: 8px; padding: 7px 10px; font-size: 12px; margin-top: 6px; }
   .jw-file-pill { flex: none; background: #fff6d8; border: 1px solid #f3e2b3; color: #a97c2f; font-weight: 700; border-radius: 999px; padding: 2px 10px; font-size: 11px; white-space: nowrap; }
   .jw-file-pill.bad { background: #fbe9e7; border-color: #f3c4bf; color: #c4554d; }
@@ -4701,6 +4709,7 @@ let jwStudents = [];    // {cn, en, enAuto, enOverride, gender, dob, idNo, start
 let jwSeedFile = null;  // 首页上传的文件，进入子视图时自动带入
 let jwActive = 0;       // 当前预览的学生索引
 let jwStatusMsg = "";
+let jwEgOpen = false;   // 上传示例展开态
 
 const JW_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -4812,6 +4821,22 @@ function drawJW() {
   const s2 = jwStep2Done();
   h += `<div class="jw-step"><span id="jwStepNum2" class="jw-step-num${s2 ? " done" : ""}">${s2 ? "✓" : "2"}</span><span class="jw-step-title">上传多个学期成绩文件</span><span class="jw-step-hint">校宝导出班级学期成绩 .xls 格式文件</span></div>`;
   h += `<div id="jwDrop" class="jw-drop"><div style="font-size:18px;margin-bottom:6px">↑</div>拖拽或点击添加<b>该学生过往所有曾经在班班级</b>的学期成绩文件<input type="file" id="jwFileInput" accept=".xls,.xlsx" multiple style="display:none"></div>`;
+  h += `<div class="jw-eg-toggle" id="jwEgToggle">不确定要传哪些文件？<span>${jwEgOpen ? "收起示例 ▴" : "查看示例 ▾"}</span></div>`;
+  if (jwEgOpen) {
+    h += `<div class="jw-eg">`;
+    h += `<div class="jw-eg-title">如：王小明开具 9-10 年级成绩单，23 年 8 月入读北外9-1班，24 年升入金盏10C班，则上传共 <b>4</b> 个班级成绩文件：</div>`;
+    const EG = [
+      ["9th, 2023-2024 Sem 1", "23北外9年级1班学生成绩.xls"],
+      ["9th, 2023-2024 Sem 2", "23北外9年级1班学生成绩.xls"],
+      ["10th, 2024-2025 Sem 1", "24金盏10年级C班（10C）学生成绩.xls"],
+      ["10th, 2024-2025 Sem 2", "24金盏10年级C班（10C）学生成绩.xls"],
+    ];
+    for (const [pill, name] of EG) {
+      h += `<div class="jw-file jw-eg-row"><span class="jw-file-pill">${pill}</span><span class="jw-file-name">${name}</span></div>`;
+    }
+    h += `<div class="jw-eg-note">每个文件对应一个学期；转班或升班过的学生，传学生当时学年所在班级的成绩文件即可。</div>`;
+    h += `</div>`;
+  }
   jwFiles.forEach((f, i) => {
     const pill = f.error
       ? `<span class="jw-file-pill bad">解析失败</span>`
@@ -4852,6 +4877,8 @@ function jwBindEvents() {
     if (e.target.files.length) jwAddFiles(e.target.files);
     input.value = "";
   });
+  const egT = document.getElementById("jwEgToggle");
+  if (egT) egT.onclick = () => { jwEgOpen = !jwEgOpen; drawJW(); };
   document.querySelectorAll(".jw-file-x").forEach(el => {
     el.onclick = () => { jwFiles.splice(Number(el.dataset.i), 1); drawJW(); };
   });
