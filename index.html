@@ -696,7 +696,10 @@ function parseFile(data) {
         break;
       }
 
-      // Extract 问题作业 (homework score <= 50)
+      // Extract 问题作业：得分 ≤ 该次作业总分的 50%
+      // 校宝导出中每项作业是"得分 | 总分"两列并排，总分在学生数据行里逐人给出。
+      // 老师可能留非百分制作业（如文学 Sascha 的 10 分制作业、AP生物 11 分的练习册），
+      // 因此阈值按该次作业自己的总分计算；读不到有效总分时按 100 分处理（即原来的 50 分线）。
       for (let c = 0; c < rows[block.headerRow].length; c++) {
         const v = String(rows[block.headerRow][c] || "");
         if (!v.includes("作业")) continue;
@@ -713,13 +716,22 @@ function parseFile(data) {
           if (rawScore === "" || rawScore == null) continue; // skip blank
           const numScore = Number(rawScore);
           if (isNaN(numScore)) continue;
-          if (numScore <= 50) {
+          // 紧邻的"总分"列
+          let maxScore = 100;
+          const maxLabel = String(rows[block.headerRow + 2]?.[sc + 1] || "");
+          if (maxLabel === "总分") {
+            const rawMax = rows[block.dataRow]?.[sc + 1];
+            const numMax = Number(rawMax);
+            if (rawMax !== "" && rawMax != null && !isNaN(numMax) && numMax > 0) maxScore = numMax;
+          }
+          if (numScore <= maxScore * 0.5) {
             hwProblems.push({
               course: block.course,
               displayName: displayName,
               teacher: courseToTeacher[block.course] || "",
               hwName: hwName,
               score: numScore,
+              maxScore: maxScore,
             });
           }
         }
@@ -2370,7 +2382,7 @@ async function dlHomework(students) {
   r1.height = 60;
   r1.getCell(1).value = {richText: [
     {font: {name:"Arial", size:20, bold:true}, text: title + "\n"},
-    {font: {name:"Arial", size:12, color:{argb:'FF666666'}}, text: "作业分数低于50自动列为问题作业"}
+    {font: {name:"Arial", size:12, color:{argb:'FF666666'}}, text: "作业得分不超过该次作业总分的50%，自动列为问题作业"}
   ]};
   r1.getCell(1).alignment = {vertical:V, horizontal:"center", wrapText:true};
 
@@ -2401,7 +2413,7 @@ async function dlHomework(students) {
         hw.displayName,
         hw.teacher,
         hw.hwName,
-        hw.score
+        hwScoreText(hw)
       ]);
       row.height = 24;
       row.eachCell((c, ci) => {
@@ -2438,7 +2450,7 @@ async function dlHomework(students) {
   ws.getColumn(3).width = 14;
   ws.getColumn(4).width = 12;
   ws.getColumn(5).width = 45;
-  ws.getColumn(6).width = 8;
+  ws.getColumn(6).width = 9;
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {type:"application/octet-stream"});
@@ -2874,6 +2886,13 @@ function previewMakeup(students, mainCols, extraCols, examType) {
   document.querySelector('.wrap').classList.remove('preview-mode');
 }
 
+// 问题作业得分显示：百分制只显示得分；非百分制显示"得分/总分"（如 5/10），避免与百分制分数混淆
+function hwScoreText(hw) {
+  const max = hw.maxScore;
+  if (max == null || max === 100) return hw.score;
+  return hw.score + "/" + max;
+}
+
 function previewHomework(students) {
   history.pushState({view:'preview'}, '');
   const res = document.getElementById("results");
@@ -2890,7 +2909,7 @@ function previewHomework(students) {
   h += `</div></div>`;
 
   if (hwStudents.length === 0) {
-    h += `<div style="text-align:center;padding:60px 0;color:#8f9faa;font-size:14px">没有发现问题作业（得分 ≤ 50）</div>`;
+    h += `<div style="text-align:center;padding:60px 0;color:#8f9faa;font-size:14px">没有发现问题作业（得分 ≤ 该次作业总分的50%）</div>`;
     res.innerHTML = h;
     return;
   }
@@ -2935,7 +2954,7 @@ function previewHomework(students) {
           h += `<td rowspan="${group.items.length}" style="font-size:11.5px;color:#8f9faa">${group.teacher}</td>`;
         }
         h += `<td style="text-align:left;padding-left:14px;font-size:11.5px">${hw.hwName}</td>`;
-        h += `<td class="cell-red" style="font-weight:500;background:#fdf4f3">${hw.score}</td>`;
+        h += `<td class="cell-red" style="font-weight:500;background:#fdf4f3;white-space:nowrap">${hwScoreText(hw)}</td>`;
         h += `</tr>`;
         firstRow = false;
         firstInGroup = false;
