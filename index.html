@@ -433,6 +433,24 @@ const COL_ORDER = [
   "音乐","体育","Capstone",
 ];
 
+// 校宝考试明细为“得分 | 总分”两列，按该次考试满分换算百分制。
+// 汇总栏已是百分制；缺少有效总分时沿用百分制，缺考文字与空白不换算。
+function readExamScore(rows, block, scoreCol) {
+  const rawScore = rows[block.dataRow]?.[scoreCol];
+  if (rawScore === "" || rawScore == null) return null;
+  const score = Number(rawScore);
+  if (!Number.isFinite(score)) return String(rawScore);
+
+  const maxLabel = String(rows[block.headerRow + 2]?.[scoreCol + 1] || "").trim();
+  const rawMax = (maxLabel === "总分" || maxLabel === "满分")
+    ? rows[block.dataRow]?.[scoreCol + 1] : null;
+  const max = Number(rawMax);
+  if (rawMax === "" || rawMax == null || !Number.isFinite(max) || max <= 0 || max === 100) {
+    return score;
+  }
+  return Math.round((score / max * 100 + Number.EPSILON) * 10) / 10;
+}
+
 function parseFile(data) {
   const wb = XLSX.read(data, {type:"array"});
   const SKIP_C0 = new Set(["学号","学期","班级","任课老师","课程","课程满分","学分"]);
@@ -593,7 +611,7 @@ function parseFile(data) {
               found = true;
               const val = rows[block.dataRow][sc];
               if (val !== "" && val != null) {
-                const parsed = isNaN(Number(val)) ? String(val) : Number(val);
+                const parsed = readExamScore(rows, block, sc);
                 // Prefer numeric score over string/Absent
                 if (typeof parsed === "number") {
                   bestScore = parsed;
@@ -614,7 +632,7 @@ function parseFile(data) {
         if (!found) {
           const val = rows[block.dataRow][c];
           if (val !== "" && val != null && !isNaN(Number(val))) {
-            testScore = Number(val);
+            testScore = readExamScore(rows, block, c);
           }
         }
         break;
@@ -639,7 +657,7 @@ function parseFile(data) {
             found = true;
             const val = rows[block.dataRow][sc];
             if (val !== "" && val != null) {
-              const parsed = isNaN(Number(val)) ? String(val) : Number(val);
+              const parsed = readExamScore(rows, block, sc);
               if (typeof parsed === "number") { bestScore = parsed; }
               else if (bestScore === null) { bestScore = parsed; }
             }
@@ -651,7 +669,7 @@ function parseFile(data) {
           // Fallback: use the main header cell value
           const val = rows[block.dataRow][c];
           if (val !== "" && val != null) {
-            midScore = isNaN(Number(val)) ? String(val) : Number(val);
+            midScore = readExamScore(rows, block, c);
           } else {
             midScore = "Absent";
           }
@@ -677,7 +695,7 @@ function parseFile(data) {
             found = true;
             const val = rows[block.dataRow][sc];
             if (val !== "" && val != null) {
-              const parsed = isNaN(Number(val)) ? String(val) : Number(val);
+              const parsed = readExamScore(rows, block, sc);
               if (typeof parsed === "number") { bestScore = parsed; }
               else if (bestScore === null) { bestScore = parsed; }
             }
@@ -688,7 +706,7 @@ function parseFile(data) {
         } else {
           const val = rows[block.dataRow][c];
           if (val !== "" && val != null) {
-            finalScore = isNaN(Number(val)) ? String(val) : Number(val);
+            finalScore = readExamScore(rows, block, c);
           } else {
             finalScore = "Absent";
           }
