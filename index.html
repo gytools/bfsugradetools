@@ -321,7 +321,7 @@ const RENAME = {
   "英语读写4级":"读写","英语读写3级":"读写","英语读写2级":"读写","英语读写1级":"读写","英语读写":"读写","ESL 读写":"读写",
   "法语":"小语种","西班牙语":"小语种","日语":"小语种",
 };
-const EXCLUDE = new Set(["选修","STEAM课程"]);
+const EXCLUDE = new Set(["选修","STEAM课程","博文杯活动"]);
 // 按教学班名排除：3U为暑期课程，不计入期中期末成绩分析（经与任课老师确认）
 const CLASS_EXCLUDE_RE = /3U/i;
 
@@ -3012,7 +3012,7 @@ const TRANSCRIPT_MAP = {
   "知识论TOK":"Theory of Knowledge",
   "AP 美术":"AP Art","AP美术":"AP Art","戏剧":"Drama","Capstone":"Capstone",
 };
-const TRANSCRIPT_EXCLUDE = new Set(["选修","STEAM课程"]);
+const TRANSCRIPT_EXCLUDE = new Set(["选修","STEAM课程","博文杯活动"]);
 const TRANSCRIPT_HIGHLIGHT = new Set(["AP Art","French","Spanish","AP Physics C"]);
 const TRANSCRIPT_ORDER = {
   "English 8":9,"English 9":10,"English 10":11,"English 11":12,"English 12":13,
@@ -4656,6 +4656,7 @@ function jwParseSemFile(parsedSheets, sheetNames, targetCn) {
         if (!c3 || c3 === "课程") continue;
         if (c1 !== targetCn) break;
         matchedCn = c1;
+        if (EXCLUDE.has(c3)) break; // 博文杯活动等非学科课程不计入成绩单
         const v = rows[j][5];
         if (v === "" || v === null || v === undefined) break;
         if (v === "未学习" || v === "不考核" || v === "缺考") break;
