@@ -141,7 +141,12 @@
   .mk-stu-all:hover { color: #2f8a5c; }
   .mk-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #9aa7b2; }
   .mk-row.on .mk-toggle { color: #2f8a5c; font-weight: 600; }
-  .mk-score { font-weight: 500; color: #c4554d; }
+  .mk-score { font-weight: 500; color: #c4554d; white-space: nowrap; }
+  .mk-defer { margin-left: 8px; border: 1px solid #e6c9a0; background: #fff; color: #b07a30; font-size: 11px; font-weight: 600; font-family: inherit; border-radius: 999px; padding: 1px 8px; cursor: pointer; vertical-align: 1px; transition: all .12s; }
+  .mk-defer:hover { border-color: #c07f28; }
+  .mk-defer.on { background: #c07f28; border-color: #c07f28; color: #fff; }
+  .mk-defer.on::before { content: "✓ "; }
+  .mk-defer.sm { margin-left: 2px; padding: 0 6px; font-size: 10.5px; line-height: 16px; }
   .mk-score.ok { color: #6a7885; font-weight: 400; }
   .mk-stu-table tbody tr.mk-row.extra:not(.on) td:not(.cell-name) { color: #8a96a1; }
   .mk-chip.extra { border-color: #e3e9ee; border-style: dashed; }
@@ -2452,6 +2457,7 @@ const MAKEUP_ORDER = [
 // 老师在预览页逐科勾选"报名"，两个视角共用同一份勾选状态；导出时只导出已报名的科目。
 // 状态按 期中 / 期末 分开保存，重新上传文件时清空。
 const makeupSignup = {mid: new Set(), final: new Set()};
+const makeupDefer = {mid: new Set(), final: new Set()};  // 缺考科目中标记"缓考"的（导出时姓名后加"（缓）"）
 let makeupShowAll = false;   // 补考报名页："显示所有课程"（含 70 分以上）
 let makeupTab = "2";         // 补考报名页当前视角：2 按学生 / 1 按科目
 function makeupKey(name, subject, cls) { return name + "||" + subject + "||" + cls; }
@@ -2499,6 +2505,7 @@ async function dlMakeup(students, mainCols, extraCols, examType) {
   }
   // 只导出已勾选报名的科目
   const sel = makeupSignup[examType];
+  const defer = makeupDefer[examType];
   const groups = {};
   let nSel = 0;
   for (const subj of Object.keys(allGroups)) {
@@ -2590,7 +2597,7 @@ async function dlMakeup(students, mainCols, extraCols, examType) {
     for (const cls of classes) {
       const entries = groups[subj][cls].sort(makeupSortCmp);
       // Name row
-      const nameRow = ["", cleanClassName(cls), ...entries.map(e => e.name)];
+      const nameRow = ["", cleanClassName(cls), ...entries.map(e => e.absent && defer.has(e.key) ? e.name + "（缓）" : e.name)];
       const nr = ws.addRow(nameRow);
       nr.height = 30;
       nr.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
@@ -2599,7 +2606,10 @@ async function dlMakeup(students, mainCols, extraCols, examType) {
       const sr = ws.addRow(scoreRow);
       sr.height = 16;
       sr.eachCell(c => { c.font = RED_FONT_M; c.alignment = {vertical:V, horizontal:"center"}; });
-      entries.forEach((e, i) => { if (e.absent) sr.getCell(3 + i).font = {...FONT, size:10, bold:true, color:{argb:'FFC07F28'}}; });
+      entries.forEach((e, i) => {
+        if (e.absent) sr.getCell(3 + i).font = {...FONT, size:10, bold:true, color:{argb:'FFC07F28'}};
+        else if (e.extra) sr.getCell(3 + i).font = {...FONT, size:10};
+      });
       // Merge 班级 cell across two rows
       const nrNum = nr.number;
       ws.mergeCells(nrNum, 2, nrNum + 1, 2);
@@ -2658,7 +2668,7 @@ async function dlMakeup(students, mainCols, extraCols, examType) {
     for (const cls of Object.keys(groups[subj])) {
       for (const e of groups[subj][cls]) {
         if (!byStudent[e.name]) byStudent[e.name] = [];
-        byStudent[e.name].push({subject: subj, cls: cleanClassName(cls), score: e.score, absent: e.absent});
+        byStudent[e.name].push({subject: subj, cls: cleanClassName(cls), score: e.absent && defer.has(e.key) ? "缺考（缓）" : e.score, absent: e.absent, extra: e.extra});
       }
     }
   }
@@ -2675,7 +2685,7 @@ async function dlMakeup(students, mainCols, extraCols, examType) {
       const r = ws2.addRow(rowData);
       r.height = 25;
       r.eachCell(c => { c.font = FONT; c.alignment = {vertical:V, horizontal:"center"}; });
-      r.getCell(4).font = it.absent ? {...FONT, bold:true, color:{argb:'FFC07F28'}} : RED_FONT_M;
+      r.getCell(4).font = it.absent ? {...FONT, bold:true, color:{argb:'FFC07F28'}} : it.extra ? FONT : RED_FONT_M;
     }
     const groupEnd = ws2.rowCount;
     if (groupEnd > groupStart) {
@@ -3194,7 +3204,7 @@ function previewMakeup(students, mainCols, extraCols, examType, rerender) {
     let firstSubj = true;
     for (const cls of classes) {
       const entries = groups[subj][cls].sort(makeupSortCmp);
-      const names = entries.map(e => `<button type="button" class="mk-chip${sel.has(e.key) ? " on" : ""}${e.absent ? " absent" : ""}${e.extra ? " extra" : ""}" data-mk="${esc(e.key)}"><span class="mk-box"></span>${esc(e.name)}<em>${e.absent ? "缺考" : e.score}</em></button>`).join("");
+      const names = entries.map(e => `<button type="button" class="mk-chip${sel.has(e.key) ? " on" : ""}${e.absent ? " absent" : ""}${e.extra ? " extra" : ""}" data-mk="${esc(e.key)}"><span class="mk-box"></span>${esc(e.name)}<em>${e.absent ? "缺考" : e.score}</em>${e.absent ? `<span class="mk-defer sm${makeupDefer[examType].has(e.key) ? " on" : ""}" data-mk-defer="${esc(e.key)}" title="标记为缓考：导出时姓名后加（缓）">缓考</span>` : ""}</button>`).join("");
       h += `<tr>`;
       if (firstSubj) h += `<td rowspan="${classes.length}" style="font-weight:600;vertical-align:top;padding-top:12px">${subj}</td>`;
       h += `<td style="text-align:left;padding-left:14px;font-size:12px;color:#666">${cleanClassName(cls)}</td>`;
@@ -3207,7 +3217,7 @@ function previewMakeup(students, mainCols, extraCols, examType, rerender) {
 
   // View 2: by student
   h += `<div id="mkView2"${makeupTab === "2" ? "" : ' style="display:none"'}><div class="preview-table-wrap"><table class="preview-table mk-stu-table">`;
-  h += `<thead><tr><th style="width:96px">姓名</th><th style="width:92px">报名</th><th>${makeupShowAll ? "科目（灰色为 70 分及以上）" : "建议补考科目"}</th><th style="width:200px">班级</th><th style="width:80px">卷面分数</th></tr></thead><tbody>`;
+  h += `<thead><tr><th style="width:96px">姓名</th><th style="width:92px">报名</th><th>${makeupShowAll ? "科目（灰色为 70 分及以上）" : "建议补考科目"}</th><th style="width:200px">班级</th><th style="width:140px">卷面分数</th></tr></thead><tbody>`;
   const studentNames = Object.keys(byStudent).sort((a,b) => a.localeCompare(b,'zh'));
   for (const name of studentNames) {
     const items = byStudent[name].sort(makeupSortCmp);
@@ -3222,7 +3232,7 @@ function previewMakeup(students, mainCols, extraCols, examType, rerender) {
       h += `<td style="font-size:12.5px">${it.subject}</td>`;
       h += `<td style="font-size:12px;color:#666">${it.cls}</td>`;
       h += it.absent
-        ? `<td class="mk-score absent">缺考</td>`
+        ? `<td class="mk-score absent">缺考<button type="button" class="mk-defer${makeupDefer[examType].has(it.key) ? " on" : ""}" data-mk-defer="${esc(it.key)}" title="标记为缓考：导出时姓名后加（缓）">缓考</button></td>`
         : `<td class="mk-score${it.extra ? " ok" : ""}">${it.score}</td>`;
       h += `</tr>`;
       first = false;
@@ -3245,6 +3255,7 @@ function previewMakeup(students, mainCols, extraCols, examType, rerender) {
       const mine = suggestedKeys.filter(k => keyStu(k) === b.dataset.mkStu);
       b.textContent = mine.every(k => sel.has(k)) ? "取消全选" : "全选";
     });
+    res.querySelectorAll("[data-mk-defer]").forEach(el => el.classList.toggle("on", makeupDefer[examType].has(el.dataset.mkDefer)));
     const dl = res.querySelector(".btn-dl");
     if (dl) dl.textContent = sel.size ? `下载报名名单（${sel.size}）` : "下载报名名单";
   };
@@ -3258,8 +3269,15 @@ function previewMakeup(students, mainCols, extraCols, examType, rerender) {
       makeupTab = v;
       return;
     }
+    const df = e.target.closest("[data-mk-defer]");
+    if (df) {
+      e.stopPropagation();
+      const k = df.dataset.mkDefer, D = makeupDefer[examType];
+      if (D.has(k)) D.delete(k); else { D.add(k); sel.add(k); }  // 标记缓考即视为报名
+      sync(); return;
+    }
     const all = e.target.closest("[data-mk-all]");
-    if (all) { all.dataset.mkAll === "1" ? suggestedKeys.forEach(k => sel.add(k)) : sel.clear(); sync(); return; }
+    if (all) { if (all.dataset.mkAll === "1") suggestedKeys.forEach(k => sel.add(k)); else { sel.clear(); makeupDefer[examType].clear(); } sync(); return; }
     const stu = e.target.closest("[data-mk-stu]");
     if (stu) {
       const mine = suggestedKeys.filter(k => keyStu(k) === stu.dataset.mkStu);
@@ -3268,7 +3286,7 @@ function previewMakeup(students, mainCols, extraCols, examType, rerender) {
       sync(); return;
     }
     const item = e.target.closest("[data-mk]");
-    if (item) { const k = item.dataset.mk; sel.has(k) ? sel.delete(k) : sel.add(k); sync(); }
+    if (item) { const k = item.dataset.mk; if (sel.has(k)) { sel.delete(k); makeupDefer[examType].delete(k); } else sel.add(k); sync(); }
   };
   const sw = res.querySelector("[data-mk-showall]");
   if (sw) sw.addEventListener("change", () => {
@@ -4390,6 +4408,7 @@ function handleFile(file) {
       } catch (err) { console.error("上传前检测失败", err); }
       lastUpload = {data, name: file.name, suspects, excl: new Set(suspects.map(x => x.id)), electives, inclElective: false};
       makeupSignup.mid.clear(); makeupSignup.final.clear();
+      makeupDefer.mid.clear(); makeupDefer.final.clear();
       if (suspects.length || electives.length) openUploadConfirm(true);
       else processUpload();
     } catch(err) {
